@@ -104,15 +104,15 @@ if [[ $FAILED_BUILD == 0 ]]; then
   echo "suites: ${#SUITES[@]}"
   for suite in "${SUITES[@]}"; do
     out=$RUN/suites/$suite
+    mkdir -p "$out"
     echo "-- $suite"
     if "$BX" bench "$BUILD" --adapter google-benchmark --suite "release/$suite" \
          --project arrow --run-key "main/$SHA/$NODE_NAME" --out "$out" \
-         --repetitions "$REPETITIONS" --case-timeout "$CASE_TIMEOUT" --no-ingest >"$out.table" 2>&1; then
+         --repetitions "$REPETITIONS" --case-timeout "$CASE_TIMEOUT" --no-ingest >"$out/table.txt" 2>&1; then
       rc=0; OK=$((OK + 1))
     else
       rc=$?; FAILED=$((FAILED + 1)); echo "   exit $rc"
     fi
-    mkdir -p "$out" && mv "$out.table" "$out/table.txt"
     n=$(ls "$out"/*.json 2>/dev/null | grep -vc workorder- || true)
     SUITES_JSON=$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); d[sys.argv[2]]={"exit":int(sys.argv[3]),"results":int(sys.argv[4])}; print(json.dumps(d))' "$SUITES_JSON" "$suite" "$rc" "$n")
   done
