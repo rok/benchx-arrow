@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------------------
+Benchmark                                 Time             CPU   Iterations UserCounters...
+-------------------------------------------------------------------------------------------
+BuildInt64DictionaryArraySimilar  543998159 ns    543974376 ns            1 bytes_per_second=470.61Mi/s items_per_second=61.6838M/s

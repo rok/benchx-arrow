@@ -1,0 +1,20 @@
+{
+ "state": "finished",
+ "node": "desko",
+ "commit": "d24791f9df58e4a38e65b27442c1c05d55c71fa6",
+ "reason": "argument",
+ "started_at": "2026-10-29T19:24:05Z",
+ "finished_at": "2026-10-29T19:25:58Z",
+ "suites": {
+  "arrow-bit-util-benchmark": {
+   "exit": 0,
+   "results": 76
+  },
+  "arrow-builder-benchmark": {
+   "exit": 0,
+   "results": 18
+  }
+ },
+ "suites_ok": 2,
+ "suites_failed": 0
+}

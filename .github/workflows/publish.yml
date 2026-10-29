@@ -1,6 +1,8 @@
 # Derived from the repository, never a source of truth: ingest every run under
-# runs/ into a benchx store, summarize it, keep the store as a cache and an
-# artifact. Delete the cache and this job rebuilds the store from the documents.
+# runs/ into a benchx store, derive the dashboard's tables (tools/marts.py), keep
+# the store as a cache and an artifact, and publish site/ to GitHub Pages when the
+# repository variable PAGES_ENABLED is "true". Delete the cache and this job
+# rebuilds everything from the documents.
 name: publish
 on:
   push:
@@ -10,6 +12,10 @@ on:
 concurrency:
   group: publish
   cancel-in-progress: false
+permissions:
+  contents: read
+  pages: write
+  id-token: write
 env:
   BENCHX_REPO: rok/benchx   # must match the benchx the node runs; the schema is shared
   BENCHX_REF: main
@@ -26,23 +32,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -q -e _benchx/prototype
+      - run: pip install -q -e _benchx/prototype chdb
       - uses: actions/cache/restore@v4
         with:
           path: _home/store.parquet
           key: store-${{ github.sha }}
           restore-keys: store-
-      - name: ingest
+      - name: ingest and derive
         env:
           BENCHX_HOME: ${{ github.workspace }}/_home
-        run: |
-          mkdir -p _home
-          n=0
-          while IFS= read -r dir; do
-            bx ingest "$dir" >/dev/null || echo "::warning::ingest problems in $dir"
-            n=$((n + 1))
-          done < <(find runs -type d -path '*/suites/*' -prune | sort)
-          echo "ingested $n suite directories"
+        run: tools/build-site.sh
       - name: summary
         env:
           BENCHX_HOME: ${{ github.workspace }}/_home
@@ -52,6 +51,10 @@ jobs:
             echo
             echo "commits measured: $(ls runs | grep -vc README || true)"
             echo "series: $(bx series | wc -l)"
+            echo
+            echo '```json'
+            cat site/data/manifest.json
+            echo '```'
             echo
             echo '```'
             bx head --table --project arrow -n 40
@@ -66,3 +69,23 @@ jobs:
         with:
           name: store
           path: _home/store.parquet
+      - uses: actions/upload-artifact@v4
+        with:
+          name: site
+          path: site
+      - uses: actions/configure-pages@v5
+        if: vars.PAGES_ENABLED == 'true'
+      - uses: actions/upload-pages-artifact@v3
+        if: vars.PAGES_ENABLED == 'true'
+        with:
+          path: site
+  deploy:
+    needs: publish
+    if: vars.PAGES_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

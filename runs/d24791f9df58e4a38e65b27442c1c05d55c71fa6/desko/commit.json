@@ -1,0 +1,10 @@
+{
+ "sha": "d24791f9df58e4a38e65b27442c1c05d55c71fa6",
+ "parents": [
+  "52a3042249d258ffb53bd9a741d3a019e804a878"
+ ],
+ "author_date": "2026-10-29T11:18:29+01:00",
+ "committer_date": "2026-10-29T11:18:29+01:00",
+ "subject": "GH-54936: [C++] Ensure reading an invalid map array from IPC doesn't crash (#54939)",
+ "branch": "main"
+}

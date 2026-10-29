@@ -1,0 +1,4 @@
+----------------------------------------------------------------------------------
+Benchmark                        Time             CPU   Iterations UserCounters...
+----------------------------------------------------------------------------------
+BuildChunkedBinaryArray  342392313 ns    342360097 ns            2 bytes_per_second=747.751Mi/s items_per_second=98.0092M/s

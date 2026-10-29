@@ -1,0 +1,4 @@
+----------------------------------------------------------------------------------------
+Benchmark                              Time             CPU   Iterations UserCounters...
+----------------------------------------------------------------------------------------
+BuildNonInlineBinaryViewArray  710451330 ns    710430175 ns            1 bytes_per_second=360.345Mi/s items_per_second=47.2311M/s
