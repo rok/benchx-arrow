@@ -1,0 +1,10 @@
+2026-10-29T19:48:01+01:00
+Running /home/rok/.benchx-arrow/build/cpp/release/arrow-bit-util-benchmark
+Run on (16 X 4673 MHz CPU s)
+CPU Caches:
+  L1 Data 32 KiB (x8)
+  L1 Instruction 32 KiB (x8)
+  L2 Unified 512 KiB (x8)
+  L3 Unified 16384 KiB (x1)
+Load Average: 8.07, 8.15, 4.44
+***WARNING*** CPU scaling is enabled, the benchmark real time measurements may be noisy and will incur extra overhead.

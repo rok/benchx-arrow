@@ -1,0 +1,4 @@
+------------------------------------------------------------------------------------
+Benchmark                          Time             CPU   Iterations UserCounters...
+------------------------------------------------------------------------------------
+BuildFixedSizeBinaryArray  204640491 ns    204629236 ns            3 bytes_per_second=1.22172Gi/s items_per_second=163.977M/s

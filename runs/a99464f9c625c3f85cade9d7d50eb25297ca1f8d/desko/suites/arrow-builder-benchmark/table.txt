@@ -1,0 +1,23 @@
+precision: 1 repetitions
+case                                 median    mean ± sd     min .. max            n  status
+-----------------------------------  --------  ------------  --------------------  -  -------
+BufferBuilderTinyWrites/real_time    189.4 ms  189.4 ms ± -  189.4 ms .. 189.4 ms  1  success
+BufferBuilderSmallWrites/real_time   40.74 ms  40.74 ms ± -  40.74 ms .. 40.74 ms  1  success
+BufferBuilderLargeWrites/real_time   42.45 ms  42.45 ms ± -  42.45 ms .. 42.45 ms  1  success
+BuildBooleanArrayNoNulls             277 ms    277 ms ± -    277 ms .. 277 ms      1  success
+BuildIntArrayNoNulls                 37.72 ms  37.72 ms ± -  37.72 ms .. 37.72 ms  1  success
+BuildAdaptiveIntNoNulls              15.28 ms  15.28 ms ± -  15.28 ms .. 15.28 ms  1  success
+BuildAdaptiveIntNoNullsScalarAppend  113.4 ms  113.4 ms ± -  113.4 ms .. 113.4 ms  1  success
+BuildBinaryArray                     332.9 ms  332.9 ms ± -  332.9 ms .. 332.9 ms  1  success
+BuildChunkedBinaryArray              335.5 ms  335.5 ms ± -  335.5 ms .. 335.5 ms  1  success
+BuildFixedSizeBinaryArray            204.6 ms  204.6 ms ± -  204.6 ms .. 204.6 ms  1  success
+BuildDecimalArray                    252.8 ms  252.8 ms ± -  252.8 ms .. 252.8 ms  1  success
+BuildInlineBinaryViewArray           564.4 ms  564.4 ms ± -  564.4 ms .. 564.4 ms  1  success
+BuildNonInlineBinaryViewArray        723.4 ms  723.4 ms ± -  723.4 ms .. 723.4 ms  1  success
+BuildInt64DictionaryArrayRandom      361.4 ms  361.4 ms ± -  361.4 ms .. 361.4 ms  1  success
+BuildInt64DictionaryArraySequential  355.8 ms  355.8 ms ± -  355.8 ms .. 355.8 ms  1  success
+BuildInt64DictionaryArraySimilar     527 ms    527 ms ± -    527 ms .. 527 ms      1  success
+BuildStringDictionaryArray           731.2 ms  731.2 ms ± -  731.2 ms .. 731.2 ms  1  success
+ArrayDataConstructDestruct           26.45 us  26.45 us ± -  26.45 us .. 26.45 us  1  success
+
+18 result(s) -> /home/rok/Documents/repos/benchx-arrow/runs/a99464f9c625c3f85cade9d7d50eb25297ca1f8d/desko/suites/arrow-builder-benchmark  (order sha256:0e916c81ff77)

@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------------
+Benchmark                           Time             CPU   Iterations UserCounters...
+-------------------------------------------------------------------------------------
+BuildStringDictionaryArray  731168608 ns    730971922 ns            1 bytes_per_second=467.234Mi/s items_per_second=45.9039M/s

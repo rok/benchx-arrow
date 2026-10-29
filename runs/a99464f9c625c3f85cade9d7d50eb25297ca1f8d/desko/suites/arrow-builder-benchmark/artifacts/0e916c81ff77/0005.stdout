@@ -1,0 +1,4 @@
+----------------------------------------------------------------------------------
+Benchmark                        Time             CPU   Iterations UserCounters...
+----------------------------------------------------------------------------------
+BuildAdaptiveIntNoNulls   15280226 ns     15278273 ns           44 bytes_per_second=16.3631Gi/s items_per_second=2.19622G/s

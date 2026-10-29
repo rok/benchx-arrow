@@ -1,0 +1,269 @@
+{
+ "schema_version": 5,
+ "producer": {
+  "name": "benchx/gbench-adapter",
+  "version": "0.1.0",
+  "mapping_version": "gbench-to-benchx/v1"
+ },
+ "ingest_key": "main%2Fa99464f9c625c3f85cade9d7d50eb25297ca1f8d%2Fdesko:BenchmarkBitmapAnd%2F131072%2F2:wall-time",
+ "attempt_key": "urn:benchx:attempt:f42554af796521d6:57",
+ "project": "arrow",
+ "source": {
+  "uri": "https://github.com/apache/arrow.git",
+  "type": "git"
+ },
+ "revision": {
+  "key": "a99464f9c625c3f85cade9d7d50eb25297ca1f8d"
+ },
+ "benchmark": {
+  "source": {
+   "uri": "https://github.com/apache/arrow.git",
+   "type": "git"
+  },
+  "revision": {
+   "key": "a99464f9c625c3f85cade9d7d50eb25297ca1f8d"
+  }
+ },
+ "coordinates": {
+  "workload": {
+   "name": "BenchmarkBitmapAnd/131072/2"
+  },
+  "subject": {
+   "name": "arrow",
+   "components": [
+    {
+     "role": "primary"
+    }
+   ],
+   "configuration": {
+    "build_type": "Release",
+    "cxx_compiler": "GNU 13.3.0",
+    "options": {
+     "ARROW_ACERO": "ON",
+     "ARROW_ALTIVEC": "ON",
+     "ARROW_AZURE": "OFF",
+     "ARROW_BOOST_USE_SHARED": "ON",
+     "ARROW_BROTLI_USE_SHARED": "ON",
+     "ARROW_BUILD_BENCHMARKS": "ON",
+     "ARROW_BUILD_BENCHMARKS_REFERENCE": "OFF",
+     "ARROW_BUILD_CONFIG_SUMMARY_JSON": "ON",
+     "ARROW_BUILD_DETAILED_BENCHMARKS": "OFF",
+     "ARROW_BUILD_EXAMPLES": "OFF",
+     "ARROW_BUILD_FUZZING_UTILITIES": "OFF",
+     "ARROW_BUILD_INTEGRATION": "OFF",
+     "ARROW_BUILD_SHARED": "ON",
+     "ARROW_BUILD_STATIC": "OFF",
+     "ARROW_BUILD_TESTS": "OFF",
+     "ARROW_BUILD_UTILITIES": "OFF",
+     "ARROW_BZ2_USE_SHARED": "ON",
+     "ARROW_COMPUTE": "ON",
+     "ARROW_CSV": "ON",
+     "ARROW_CUDA": "OFF",
+     "ARROW_CXXFLAGS": "",
+     "ARROW_DATASET": "ON",
+     "ARROW_DEFINE_OPTIONS": "ON",
+     "ARROW_DEPENDENCY_SOURCE": "AUTO",
+     "ARROW_DEPENDENCY_USE_SHARED": "ON",
+     "ARROW_ENABLE_THREADING": "ON",
+     "ARROW_ENABLE_TIMING_TESTS": "ON",
+     "ARROW_EXTRA_ERROR_CONTEXT": "OFF",
+     "ARROW_FILESYSTEM": "ON",
+     "ARROW_FLIGHT": "OFF",
+     "ARROW_FLIGHT_SQL": "OFF",
+     "ARROW_FLIGHT_SQL_ODBC": "OFF",
+     "ARROW_FLIGHT_SQL_ODBC_INSTALLER": "OFF",
+     "ARROW_FUZZING": "OFF",
+     "ARROW_GANDIVA": "OFF",
+     "ARROW_GANDIVA_PC_CXX_FLAGS": "",
+     "ARROW_GANDIVA_STATIC_LIBSTDCPP": "OFF",
+     "ARROW_GCS": "OFF",
+     "ARROW_GDB_INSTALL_DIR": "",
+     "ARROW_GENERATE_COVERAGE": "OFF",
+     "ARROW_GFLAGS_USE_SHARED": "ON",
+     "ARROW_GGDB_DEBUG": "ON",
+     "ARROW_GIT_DESCRIPTION": "",
+     "ARROW_GIT_ID": "",
+     "ARROW_GRPC_CPP_PLUGIN": "",
+     "ARROW_GRPC_USE_SHARED": "ON",
+     "ARROW_HDFS": "OFF",
+     "ARROW_INSTALL_NAME_RPATH": "ON",
+     "ARROW_IPC": "ON",
+     "ARROW_JEMALLOC": "OFF",
+     "ARROW_JEMALLOC_USE_SHARED": "ON",
+     "ARROW_JSON": "ON",
+     "ARROW_LARGE_MEMORY_TESTS": "OFF",
+     "ARROW_LLVM_USE_SHARED": "ON",
+     "ARROW_LZ4_USE_SHARED": "ON",
+     "ARROW_MIMALLOC": "ON",
+     "ARROW_OPENSSL_USE_SHARED": "ON",
+     "ARROW_OPTIONAL_INSTALL": "OFF",
+     "ARROW_ORC": "OFF",
+     "ARROW_PACKAGE_KIND": "",
+     "ARROW_PARQUET": "ON",
+     "ARROW_POSITION_INDEPENDENT_CODE": "ON",
+     "ARROW_PROTOBUF_USE_SHARED": "ON",
+     "ARROW_PYTHON": "OFF",
+     "ARROW_RE2_LINKAGE": "static",
+     "ARROW_RPATH_ORIGIN": "OFF",
+     "ARROW_RUNTIME_SIMD_LEVEL": "MAX",
+     "ARROW_S3": "OFF",
+     "ARROW_SIMD_LEVEL": "DEFAULT",
+     "ARROW_SNAPPY_USE_SHARED": "ON",
+     "ARROW_SUBSTRAIT": "OFF",
+     "ARROW_TENSORFLOW": "OFF",
+     "ARROW_TESTING": "OFF",
+     "ARROW_TEST_LINKAGE": "shared",
+     "ARROW_TEST_MEMCHECK": "OFF",
+     "ARROW_THRIFT_USE_SHARED": "ON",
+     "ARROW_USE_ASAN": "OFF",
+     "ARROW_USE_CCACHE": "ON",
+     "ARROW_USE_GLOG": "OFF",
+     "ARROW_USE_LLD": "OFF",
+     "ARROW_USE_MOLD": "OFF",
+     "ARROW_USE_SCCACHE": "ON",
+     "ARROW_USE_TSAN": "OFF",
+     "ARROW_USE_UBSAN": "OFF",
+     "ARROW_UTF8PROC_USE_SHARED": "ON",
+     "ARROW_VERBOSE_THIRDPARTY_BUILD": "OFF",
+     "ARROW_WITH_BACKTRACE": "ON",
+     "ARROW_WITH_BROTLI": "ON",
+     "ARROW_WITH_BZ2": "OFF",
+     "ARROW_WITH_LZ4": "ON",
+     "ARROW_WITH_MUSL": "OFF",
+     "ARROW_WITH_OPENTELEMETRY": "OFF",
+     "ARROW_WITH_RE2": "ON",
+     "ARROW_WITH_SNAPPY": "ON",
+     "ARROW_WITH_UTF8PROC": "ON",
+     "ARROW_WITH_ZLIB": "ON",
+     "ARROW_WITH_ZSTD": "ON",
+     "ARROW_ZSTD_USE_SHARED": "ON"
+    }
+   }
+  },
+  "quantity": {
+   "name": "wall-time",
+   "unit": "s",
+   "direction": "lower-is-better"
+  },
+  "comparison_context": {
+   "harness": {
+    "name": "google-benchmark"
+   },
+   "protocol": {
+    "repetitions": {
+     "mode": "fixed",
+     "levels": [
+      {
+       "unit": "repetition",
+       "n": 1
+      }
+     ]
+    },
+    "calibration": {
+     "mode": "adaptive",
+     "minimum_sample_seconds": 0.5
+    },
+    "warmup": {
+     "mode": "none"
+    }
+   }
+  },
+  "environment": {
+   "schema": "machine/v1",
+   "identity": {
+    "runner": "desko",
+    "cpu": "AMD Ryzen 7 5700G with Radeon Graphics",
+    "cores": 16
+   },
+   "metadata": {
+    "architecture": "x86_64"
+   }
+  }
+ },
+ "measurement": {
+  "status": "success",
+  "observations": [
+   1.2800386679574275e-05
+  ]
+ },
+ "observed_context": {
+  "os": "Linux",
+  "kernel": "6.8.0-146-generic",
+  "libc": "glibc-2.39",
+  "governor": "powersave",
+  "load_avg_1m": 9.36,
+  "google_benchmark": {
+   "cpu_scaling_enabled": true,
+   "load_avg": [
+    4.68896,
+    7.27051,
+    4.29834
+   ]
+  }
+ },
+ "procedure": {
+  "attempted_repetitions": 1,
+  "completed_repetitions": 1,
+  "inner_iterations": 53988,
+  "duration_seconds": 0.848362,
+  "timeout_seconds": 120.0
+ },
+ "provenance": {
+  "run_key": "main/a99464f9c625c3f85cade9d7d50eb25297ca1f8d/desko",
+  "started_at": "2026-10-29T18:48:44.023931Z",
+  "ended_at": "2026-10-29T18:48:44.872293Z",
+  "subject_dirty": "clean",
+  "benchmark_dirty": "clean",
+  "runner": {
+   "name": "benchx-prototype",
+   "version": "0.1.0"
+  },
+  "artifacts": [
+   {
+    "kind": "native-output",
+    "media_type": "application/json",
+    "uri": "file:///home/rok/Documents/repos/benchx-arrow/runs/a99464f9c625c3f85cade9d7d50eb25297ca1f8d/desko/suites/arrow-bit-util-benchmark/artifacts/f42554af7965/0057.native.json",
+    "sha256": "a94528e3518c20c0ed00fe589e625a3a8252c804a358aa2ff66f91f638d181ec"
+   },
+   {
+    "kind": "stdout",
+    "media_type": "text/plain",
+    "uri": "file:///home/rok/Documents/repos/benchx-arrow/runs/a99464f9c625c3f85cade9d7d50eb25297ca1f8d/desko/suites/arrow-bit-util-benchmark/artifacts/f42554af7965/0057.stdout",
+    "sha256": "835bbdb1caa471a2fbd43a7ebba7452cbb23927ef1ff641ce8091a4405af00a6"
+   },
+   {
+    "kind": "stderr",
+    "media_type": "text/plain",
+    "uri": "file:///home/rok/Documents/repos/benchx-arrow/runs/a99464f9c625c3f85cade9d7d50eb25297ca1f8d/desko/suites/arrow-bit-util-benchmark/artifacts/f42554af7965/0057.stderr",
+    "sha256": "0668269c4efc842bdfc0607afaf0ea619bd1f9ea271ade69d6eed26631aa4def"
+   }
+  ],
+  "info": {
+   "workorder_ref": "sha256:f42554af796521d6c7a35c729e5f1af8d7bf9ede59c6b429bc17b9a9b2ceb305",
+   "requester": {
+    "kind": "workbench",
+    "name": "bx"
+   },
+   "google_benchmark": {
+    "host_name": "desko",
+    "num_cpus": 16,
+    "mhz_per_cpu": 4673,
+    "executable": "/home/rok/.benchx-arrow/build/cpp/release/arrow-bit-util-benchmark",
+    "library_build_type": "release",
+    "date": "2026-10-29T19:48:44+01:00"
+   },
+   "how_built": "# https://github.com/apache/arrow.git at a99464f9c625c3f85cade9d7d50eb25297ca1f8d (incremental tree and build directory, reused across commits)\ngit -C /home/rok/.benchx-arrow/src/cpp checkout -q --detach a99464f9c625c3f85cade9d7d50eb25297ca1f8d\ngit -C /home/rok/.benchx-arrow/src/cpp submodule update -q --init --depth 1\ncmake -S /home/rok/.benchx-arrow/src/cpp/cpp -B /home/rok/.benchx-arrow/build/cpp -GNinja -DCMAKE_BUILD_TYPE=Release -DARROW_BUILD_BENCHMARKS=ON -DARROW_BUILD_TESTS=OFF -DARROW_BUILD_SHARED=ON -DARROW_BUILD_STATIC=OFF -DARROW_ACERO=ON -DARROW_COMPUTE=ON -DARROW_CSV=ON -DARROW_DATASET=ON -DARROW_FILESYSTEM=ON -DARROW_IPC=ON -DARROW_JSON=ON -DARROW_PARQUET=ON -DARROW_WITH_BROTLI=ON -DARROW_WITH_LZ4=ON -DARROW_WITH_SNAPPY=ON -DARROW_WITH_ZLIB=ON -DARROW_WITH_ZSTD=ON -DARROW_DEPENDENCY_SOURCE=AUTO\ncmake --build /home/rok/.benchx-arrow/build/cpp -j 14",
+   "activation": "export ARROW_TEST_DATA=/home/rok/.benchx-arrow/src/cpp/testing/data PARQUET_TEST_DATA=/home/rok/.benchx-arrow/src/cpp/cpp/submodules/parquet-testing/data",
+   "shell": "bash",
+   "target_provider": {
+    "name": "benchx-arrow/provider/arrow-provider.sh",
+    "version": "1"
+   }
+  },
+  "subject_tree": "4f04e3e2f8789142b804f35f6c92276f2dae248e",
+  "benchmark_tree": "4f04e3e2f8789142b804f35f6c92276f2dae248e",
+  "labels": {
+   "configuration": "cpp"
+  }
+ }
+}

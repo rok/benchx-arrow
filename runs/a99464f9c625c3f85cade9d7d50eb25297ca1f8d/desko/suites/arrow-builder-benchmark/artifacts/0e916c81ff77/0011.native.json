@@ -1,0 +1,59 @@
+{
+  "context": {
+    "date": "2026-10-29T19:49:20+01:00",
+    "host_name": "desko",
+    "executable": "/home/rok/.benchx-arrow/build/cpp/release/arrow-builder-benchmark",
+    "num_cpus": 16,
+    "mhz_per_cpu": 4673,
+    "cpu_scaling_enabled": true,
+    "caches": [
+      {
+        "type": "Data",
+        "level": 1,
+        "size": 32768,
+        "num_sharing": 2
+      },
+      {
+        "type": "Instruction",
+        "level": 1,
+        "size": 32768,
+        "num_sharing": 2
+      },
+      {
+        "type": "Unified",
+        "level": 2,
+        "size": 524288,
+        "num_sharing": 2
+      },
+      {
+        "type": "Unified",
+        "level": 3,
+        "size": 16777216,
+        "num_sharing": 16
+      }
+    ],
+    "load_avg": [3.18848,6.60742,4.18506],
+    "library_build_type": "release"
+  },
+  "benchmarks": [
+    {
+      "name": "BuildInlineBinaryViewArray",
+      "family_index": 0,
+      "per_family_instance_index": 0,
+      "run_name": "BuildInlineBinaryViewArray",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 1,
+      "real_time": 5.6436326610855758e+08,
+      "cpu_time": 5.6415971200000000e+08,
+      "time_unit": "ns",
+      "bytes_per_second": 4.7581465016062683e+08,
+      "items_per_second": 5.9476831270078354e+07,
+      "allocs_per_iter": 3.8000000000000000e+01,
+      "max_bytes_used": 541065216,
+      "total_allocated_bytes": 541065216
+    }
+  ]
+}

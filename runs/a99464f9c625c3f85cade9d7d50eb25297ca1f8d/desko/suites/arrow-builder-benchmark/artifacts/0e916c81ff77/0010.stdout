@@ -1,0 +1,4 @@
+----------------------------------------------------------------------------
+Benchmark                  Time             CPU   Iterations UserCounters...
+----------------------------------------------------------------------------
+BuildDecimalArray  252845720 ns    252835777 ns            2 bytes_per_second=1.97757Gi/s items_per_second=132.712M/s

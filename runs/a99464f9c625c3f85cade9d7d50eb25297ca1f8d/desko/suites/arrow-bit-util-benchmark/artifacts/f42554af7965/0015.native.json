@@ -1,0 +1,55 @@
+{
+  "context": {
+    "date": "2026-10-29T19:48:04+01:00",
+    "host_name": "desko",
+    "executable": "/home/rok/.benchx-arrow/build/cpp/release/arrow-bit-util-benchmark",
+    "num_cpus": 16,
+    "mhz_per_cpu": 4673,
+    "cpu_scaling_enabled": true,
+    "caches": [
+      {
+        "type": "Data",
+        "level": 1,
+        "size": 32768,
+        "num_sharing": 2
+      },
+      {
+        "type": "Instruction",
+        "level": 1,
+        "size": 32768,
+        "num_sharing": 2
+      },
+      {
+        "type": "Unified",
+        "level": 2,
+        "size": 524288,
+        "num_sharing": 2
+      },
+      {
+        "type": "Unified",
+        "level": 3,
+        "size": 16777216,
+        "num_sharing": 16
+      }
+    ],
+    "load_avg": [8.07422,8.15381,4.43994],
+    "library_build_type": "release"
+  },
+  "benchmarks": [
+    {
+      "name": "BitRunReaderLinear/60",
+      "family_index": 0,
+      "per_family_instance_index": 0,
+      "run_name": "BitRunReaderLinear/60",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 128197,
+      "real_time": 5.3668751534253925e+03,
+      "cpu_time": 5.3668020156477924e+03,
+      "time_unit": "ns",
+      "bytes_per_second": 9.5401320657475337e+07
+    }
+  ]
+}

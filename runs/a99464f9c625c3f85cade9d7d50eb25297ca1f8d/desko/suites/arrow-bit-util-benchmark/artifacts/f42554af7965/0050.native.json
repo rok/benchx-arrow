@@ -1,0 +1,55 @@
+{
+  "context": {
+    "date": "2026-10-29T19:48:37+01:00",
+    "host_name": "desko",
+    "executable": "/home/rok/.benchx-arrow/build/cpp/release/arrow-bit-util-benchmark",
+    "num_cpus": 16,
+    "mhz_per_cpu": 4673,
+    "cpu_scaling_enabled": true,
+    "caches": [
+      {
+        "type": "Data",
+        "level": 1,
+        "size": 32768,
+        "num_sharing": 2
+      },
+      {
+        "type": "Instruction",
+        "level": 1,
+        "size": 32768,
+        "num_sharing": 2
+      },
+      {
+        "type": "Unified",
+        "level": 2,
+        "size": 524288,
+        "num_sharing": 2
+      },
+      {
+        "type": "Unified",
+        "level": 3,
+        "size": 16777216,
+        "num_sharing": 16
+      }
+    ],
+    "load_avg": [5.01025,7.37646,4.31641],
+    "library_build_type": "release"
+  },
+  "benchmarks": [
+    {
+      "name": "BitmapEqualsWithoutOffset/8192",
+      "family_index": 0,
+      "per_family_instance_index": 0,
+      "run_name": "BitmapEqualsWithoutOffset/8192",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 11418765,
+      "real_time": 6.4559621995934279e+01,
+      "cpu_time": 6.4542454547405100e+01,
+      "time_unit": "ns",
+      "bytes_per_second": 1.2692420914954739e+11
+    }
+  ]
+}

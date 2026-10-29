@@ -1,0 +1,4 @@
+-----------------------------------------------------------------------------------
+Benchmark                         Time             CPU   Iterations UserCounters...
+-----------------------------------------------------------------------------------
+BuildBooleanArrayNoNulls  277006960 ns    276992112 ns            2 bytes_per_second=924.214Mi/s items_per_second=121.139M/s

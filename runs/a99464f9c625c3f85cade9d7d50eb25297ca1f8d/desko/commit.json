@@ -1,0 +1,10 @@
+{
+ "sha": "a99464f9c625c3f85cade9d7d50eb25297ca1f8d",
+ "parents": [
+  "d24791f9df58e4a38e65b27442c1c05d55c71fa6"
+ ],
+ "author_date": "2026-10-29T08:24:17-04:00",
+ "committer_date": "2026-10-29T13:24:17+01:00",
+ "subject": "GH-33823: [C++][IPC] Improve error messages when opening files that are the wrong format (#49771)",
+ "branch": "main"
+}

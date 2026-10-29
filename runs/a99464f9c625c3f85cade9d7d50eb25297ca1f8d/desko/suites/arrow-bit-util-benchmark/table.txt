@@ -1,0 +1,81 @@
+precision: 1 repetitions
+case                                    median    mean ± sd     min .. max            n  status
+--------------------------------------  --------  ------------  --------------------  -  -------------------------
+BitmapReader/8192                       58.08 us  58.08 us ± -  58.08 us .. 58.08 us  1  success
+BitmapUInt64Reader/8192                 465 ns    465 ns ± -    465 ns .. 465 ns      1  success
+BitRunReader/-1                         -         -             -                     0  error (harness.no-output)
+BitRunReader/0                          93.07 ns  93.07 ns ± -  93.07 ns .. 93.07 ns  1  success
+BitRunReader/10                         1.641 us  1.641 us ± -  1.641 us .. 1.641 us  1  success
+BitRunReader/25                         3.57 us   3.57 us ± -   3.57 us .. 3.57 us    1  success
+BitRunReader/50                         5.076 us  5.076 us ± -  5.076 us .. 5.076 us  1  success
+BitRunReader/60                         4.918 us  4.918 us ± -  4.918 us .. 4.918 us  1  success
+BitRunReader/75                         3.642 us  3.642 us ± -  3.642 us .. 3.642 us  1  success
+BitRunReader/99                         213.5 ns  213.5 ns ± -  213.5 ns .. 213.5 ns  1  success
+BitRunReaderLinear/-1                   -         -             -                     0  error (harness.no-output)
+BitRunReaderLinear/0                    1.937 us  1.937 us ± -  1.937 us .. 1.937 us  1  success
+BitRunReaderLinear/10                   3.044 us  3.044 us ± -  3.044 us .. 3.044 us  1  success
+BitRunReaderLinear/25                   4.44 us   4.44 us ± -   4.44 us .. 4.44 us    1  success
+BitRunReaderLinear/50                   5.598 us  5.598 us ± -  5.598 us .. 5.598 us  1  success
+BitRunReaderLinear/60                   5.367 us  5.367 us ± -  5.367 us .. 5.367 us  1  success
+BitRunReaderLinear/75                   4.55 us   4.55 us ± -   4.55 us .. 4.55 us    1  success
+BitRunReaderLinear/99                   2.213 us  2.213 us ± -  2.213 us .. 2.213 us  1  success
+SetBitRunReader/-1                      -         -             -                     0  error (harness.no-output)
+SetBitRunReader/0                       36.89 ns  36.89 ns ± -  36.89 ns .. 36.89 ns  1  success
+SetBitRunReader/10                      938.5 ns  938.5 ns ± -  938.5 ns .. 938.5 ns  1  success
+SetBitRunReader/25                      2.151 us  2.151 us ± -  2.151 us .. 2.151 us  1  success
+SetBitRunReader/50                      3.069 us  3.069 us ± -  3.069 us .. 3.069 us  1  success
+SetBitRunReader/60                      2.908 us  2.908 us ± -  2.908 us .. 2.908 us  1  success
+SetBitRunReader/75                      2.405 us  2.405 us ± -  2.405 us .. 2.405 us  1  success
+SetBitRunReader/99                      155.4 ns  155.4 ns ± -  155.4 ns .. 155.4 ns  1  success
+ReverseSetBitRunReader/-1               -         -             -                     0  error (harness.no-output)
+ReverseSetBitRunReader/0                36.99 ns  36.99 ns ± -  36.99 ns .. 36.99 ns  1  success
+ReverseSetBitRunReader/10               1.539 us  1.539 us ± -  1.539 us .. 1.539 us  1  success
+ReverseSetBitRunReader/25               3.337 us  3.337 us ± -  3.337 us .. 3.337 us  1  success
+ReverseSetBitRunReader/50               4.696 us  4.696 us ± -  4.696 us .. 4.696 us  1  success
+ReverseSetBitRunReader/60               4.501 us  4.501 us ± -  4.501 us .. 4.501 us  1  success
+ReverseSetBitRunReader/75               3.561 us  3.561 us ± -  3.561 us .. 3.561 us  1  success
+ReverseSetBitRunReader/99               229.7 ns  229.7 ns ± -  229.7 ns .. 229.7 ns  1  success
+VisitBits/8192                          57.32 us  57.32 us ± -  57.32 us .. 57.32 us  1  success
+VisitBitsUnrolled/8192                  28.66 us  28.66 us ± -  28.66 us .. 28.66 us  1  success
+SetBitsTo/2                             4.845 ns  4.845 ns ± -  4.845 ns .. 4.845 ns  1  success
+SetBitsTo/16                            5.064 ns  5.064 ns ± -  5.064 ns .. 5.064 ns  1  success
+SetBitsTo/1024                          9.223 ns  9.223 ns ± -  9.223 ns .. 9.223 ns  1  success
+SetBitsTo/131072                        1.024 us  1.024 us ± -  1.024 us .. 1.024 us  1  success
+CountSetBits/16                         3.544 ns  3.544 ns ± -  3.544 ns .. 3.544 ns  1  success
+CountSetBits/1024                       25.05 ns  25.05 ns ± -  25.05 ns .. 25.05 ns  1  success
+CountSetBits/131072                     2.734 us  2.734 us ± -  2.734 us .. 2.734 us  1  success
+BitmapWriter/8192                       49.43 us  49.43 us ± -  49.43 us .. 49.43 us  1  success
+FirstTimeBitmapWriter/8192              43.1 us   43.1 us ± -   43.1 us .. 43.1 us    1  success
+GenerateBits/8192                       42.79 us  42.79 us ± -  42.79 us .. 42.79 us  1  success
+GenerateBitsUnrolled/8192               50.78 us  50.78 us ± -  50.78 us .. 50.78 us  1  success
+CopyBitmapWithoutOffset/8192            70.51 ns  70.51 ns ± -  70.51 ns .. 70.51 ns  1  success
+CopyBitmapWithOffset/8192               594 ns    594 ns ± -    594 ns .. 594 ns      1  success
+CopyBitmapWithOffsetBoth/8192           1.208 us  1.208 us ± -  1.208 us .. 1.208 us  1  success
+BitmapEqualsWithoutOffset/8192          64.56 ns  64.56 ns ± -  64.56 ns .. 64.56 ns  1  success
+BitmapEqualsWithOffset/8192             1.528 us  1.528 us ± -  1.528 us .. 1.528 us  1  success
+BenchmarkBitmapAnd/32768/0              696 ns    696 ns ± -    696 ns .. 696 ns      1  success
+BenchmarkBitmapAnd/131072/0             2.79 us   2.79 us ± -   2.79 us .. 2.79 us    1  success
+BenchmarkBitmapAnd/32768/1              3.241 us  3.241 us ± -  3.241 us .. 3.241 us  1  success
+BenchmarkBitmapAnd/131072/1             12.81 us  12.81 us ± -  12.81 us .. 12.81 us  1  success
+BenchmarkBitmapAnd/32768/2              3.244 us  3.244 us ± -  3.244 us .. 3.244 us  1  success
+BenchmarkBitmapAnd/131072/2             12.8 us   12.8 us ± -   12.8 us .. 12.8 us    1  success
+BenchmarkBitmapVisitBitsetAnd/32768/0   647.5 us  647.5 us ± -  647.5 us .. 647.5 us  1  success
+BenchmarkBitmapVisitBitsetAnd/131072/0  3.342 ms  3.342 ms ± -  3.342 ms .. 3.342 ms  1  success
+BenchmarkBitmapVisitBitsetAnd/32768/1   634.8 us  634.8 us ± -  634.8 us .. 634.8 us  1  success
+BenchmarkBitmapVisitBitsetAnd/131072/1  3.353 ms  3.353 ms ± -  3.353 ms .. 3.353 ms  1  success
+BenchmarkBitmapVisitBitsetAnd/32768/2   631.9 us  631.9 us ± -  631.9 us .. 631.9 us  1  success
+BenchmarkBitmapVisitBitsetAnd/131072/2  3.322 ms  3.322 ms ± -  3.322 ms .. 3.322 ms  1  success
+BenchmarkBitmapVisitUInt8And/32768/0    921.5 ns  921.5 ns ± -  921.5 ns .. 921.5 ns  1  success
+BenchmarkBitmapVisitUInt8And/131072/0   3.647 us  3.647 us ± -  3.647 us .. 3.647 us  1  success
+BenchmarkBitmapVisitUInt8And/32768/1    21.77 us  21.77 us ± -  21.77 us .. 21.77 us  1  success
+BenchmarkBitmapVisitUInt8And/131072/1   86.89 us  86.89 us ± -  86.89 us .. 86.89 us  1  success
+BenchmarkBitmapVisitUInt8And/32768/2    21.74 us  21.74 us ± -  21.74 us .. 21.74 us  1  success
+BenchmarkBitmapVisitUInt8And/131072/2   86.72 us  86.72 us ± -  86.72 us .. 86.72 us  1  success
+BenchmarkBitmapVisitUInt64And/32768/0   718.8 ns  718.8 ns ± -  718.8 ns .. 718.8 ns  1  success
+BenchmarkBitmapVisitUInt64And/131072/0  2.788 us  2.788 us ± -  2.788 us .. 2.788 us  1  success
+BenchmarkBitmapVisitUInt64And/32768/1   4.183 us  4.183 us ± -  4.183 us .. 4.183 us  1  success
+BenchmarkBitmapVisitUInt64And/131072/1  15.04 us  15.04 us ± -  15.04 us .. 15.04 us  1  success
+BenchmarkBitmapVisitUInt64And/32768/2   4.177 us  4.177 us ± -  4.177 us .. 4.177 us  1  success
+BenchmarkBitmapVisitUInt64And/131072/2  15.05 us  15.05 us ± -  15.05 us .. 15.05 us  1  success
+
+76 result(s) -> /home/rok/Documents/repos/benchx-arrow/runs/a99464f9c625c3f85cade9d7d50eb25297ca1f8d/desko/suites/arrow-bit-util-benchmark  (order sha256:f42554af7965)

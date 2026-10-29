@@ -1,0 +1,53 @@
+{
+ "schema_version": "benchx/work-order/0.1.0",
+ "work_order_id": "urn:uuid:eb576a30-97ae-4dc9-a540-b887eb597bc2",
+ "state": "resolved",
+ "suites": [
+  {
+   "adapter": "google-benchmark",
+   "suite": "release/arrow-builder-benchmark"
+  }
+ ],
+ "target": {
+  "kind": "build",
+  "path": "/home/rok/.benchx-arrow/build/cpp",
+  "source_dir": "/home/rok/.benchx-arrow/src/cpp",
+  "source": {
+   "uri": "https://github.com/apache/arrow.git",
+   "type": "git"
+  },
+  "how_built": "# https://github.com/apache/arrow.git at a99464f9c625c3f85cade9d7d50eb25297ca1f8d (incremental tree and build directory, reused across commits)\ngit -C /home/rok/.benchx-arrow/src/cpp checkout -q --detach a99464f9c625c3f85cade9d7d50eb25297ca1f8d\ngit -C /home/rok/.benchx-arrow/src/cpp submodule update -q --init --depth 1\ncmake -S /home/rok/.benchx-arrow/src/cpp/cpp -B /home/rok/.benchx-arrow/build/cpp -GNinja -DCMAKE_BUILD_TYPE=Release -DARROW_BUILD_BENCHMARKS=ON -DARROW_BUILD_TESTS=OFF -DARROW_BUILD_SHARED=ON -DARROW_BUILD_STATIC=OFF -DARROW_ACERO=ON -DARROW_COMPUTE=ON -DARROW_CSV=ON -DARROW_DATASET=ON -DARROW_FILESYSTEM=ON -DARROW_IPC=ON -DARROW_JSON=ON -DARROW_PARQUET=ON -DARROW_WITH_BROTLI=ON -DARROW_WITH_LZ4=ON -DARROW_WITH_SNAPPY=ON -DARROW_WITH_ZLIB=ON -DARROW_WITH_ZSTD=ON -DARROW_DEPENDENCY_SOURCE=AUTO\ncmake --build /home/rok/.benchx-arrow/build/cpp -j 14",
+  "activation": "export ARROW_TEST_DATA=/home/rok/.benchx-arrow/src/cpp/testing/data PARQUET_TEST_DATA=/home/rok/.benchx-arrow/src/cpp/cpp/submodules/parquet-testing/data",
+  "shell": "bash",
+  "provider": {
+   "name": "benchx-arrow/provider/arrow-provider.sh",
+   "version": "1"
+  }
+ },
+ "quantities": [
+  "wall-time"
+ ],
+ "precision": {
+  "repetitions": 1
+ },
+ "timeouts": {
+  "case_s": 120.0,
+  "order_s": 600
+ },
+ "run_key": "main/a99464f9c625c3f85cade9d7d50eb25297ca1f8d/desko",
+ "requester": {
+  "kind": "workbench",
+  "name": "bx"
+ },
+ "plan": [
+  {
+   "id": "p0",
+   "case": "*",
+   "quantity": "wall-time"
+  }
+ ],
+ "labels": {
+  "configuration": "cpp"
+ },
+ "project": "arrow"
+}
