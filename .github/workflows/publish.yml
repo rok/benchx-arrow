@@ -7,7 +7,7 @@ name: publish
 on:
   push:
     branches: [main]
-    paths: ["runs/**", ".github/workflows/publish.yml"]
+    paths: ["runs/**", "tools/**", "site/**", ".github/workflows/publish.yml"]
   workflow_dispatch:
 concurrency:
   group: publish
