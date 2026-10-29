@@ -6,7 +6,7 @@
 const DATA = "data/";
 const GITHUB = "https://github.com/apache/arrow/commit/";
 const SERIES_VARS = ["--series-1", "--series-2", "--series-3", "--series-4", "--series-5", "--series-6", "--series-7", "--series-8"];
-const state = { v: "", manifest: null, landing: null, series: null, histories: new Map(), commits: new Map(), chart: null, nodeSlots: new Map() };
+const state = { v: "", manifest: null, landing: null, series: null, sparks: null, histories: new Map(), commits: new Map(), chart: null, nodeSlots: new Map() };
 
 // ---- utilities ------------------------------------------------------------------
 
@@ -124,20 +124,71 @@ function gapTag(ch) {
 
 // ---- views ----------------------------------------------------------------------
 
-function renderLanding() {
+async function renderLanding() {
   const L = state.landing, st = L.stats, latest = st.latest;
+  if (!state.sparks) state.sparks = await getJSON("views/sparks.json");
+  const S = state.sparks;
+  // One card per benchmark (case, params, quantity); its nodes are lines on the same chart.
+  const groups = new Map();
+  for (const s of S.series) {
+    const key = `${s.suite}|${s.case}|${s.params}|${s.quantity}`;
+    if (!groups.has(key)) groups.set(key, { suite: s.suite, case: s.case, params: s.params, quantity: s.quantity, unit: s.unit, direction: s.direction, list: [] });
+    groups.get(key).list.push(s);
+  }
+  const all = [...groups.values()].map((g) => {
+    const newest = g.list.filter((s) => s.latest != null).sort((a, b) => b.orders[b.orders.length - 1] - a.orders[a.orders.length - 1])[0];
+    return { ...g, newest, change: newest?.vs_prev ?? null, noise: newest?.noise ?? null, v: newest ? verdict(newest.vs_prev, g.direction) : "none" };
+  });
+  const suites = [...new Set(all.map((g) => g.suite))].sort();
+  const nodes = [...new Set(S.series.map((s) => s.node))].sort();
+  const q = new URLSearchParams((location.hash.split("?")[1]) || "");
+  const ctl = { suite: q.get("suite") || "all", sort: q.get("sort") || "change", text: q.get("f") || "", n: 48 };
+  const setHash = () => { const p = new URLSearchParams(); if (ctl.suite !== "all") p.set("suite", ctl.suite); if (ctl.sort !== "change") p.set("sort", ctl.sort); if (ctl.text) p.set("f", ctl.text); history.replaceState(null, "", "#/" + (p.toString() ? "?" + p : "")); };
+  const sorters = {
+    change: (a, b) => Math.abs(b.change ?? -1) - Math.abs(a.change ?? -1),
+    regressed: (a, b) => (b.v === "regressed") - (a.v === "regressed") || Math.abs(b.change ?? -1) - Math.abs(a.change ?? -1),
+    improved: (a, b) => (b.v === "improved") - (a.v === "improved") || Math.abs(b.change ?? -1) - Math.abs(a.change ?? -1),
+    noise: (a, b) => (b.noise ?? -1) - (a.noise ?? -1),
+    name: (a, b) => a.suite.localeCompare(b.suite) || a.case.localeCompare(b.case) || a.params.localeCompare(b.params),
+  };
+  const grid = h("div", { class: "grid" });
+  const status = h("span", { class: "note" });
+  const more = h("button", { class: "ghost", onclick: () => { ctl.n += 48; draw(); } }, "show 48 more");
+  const draw = () => {
+    const needle = ctl.text.trim().toLowerCase();
+    const rows = all.filter((g) => (ctl.suite === "all" || g.suite === ctl.suite) && (!needle || `${g.suite} ${g.case} ${g.params}`.toLowerCase().includes(needle))).sort(sorters[ctl.sort] || sorters.change);
+    grid.replaceChildren();
+    const shown = rows.slice(0, ctl.n), cards = [];
+    for (const g of shown) {
+      const plot = h("div", { class: "spark" });
+      grid.append(h("a", { class: "mini", href: benchHref(g) },
+        h("div", { class: "mini-head" }, h("span", { class: "mono name", title: caseLabel(g) }, caseLabel(g)), g.newest ? delta(g.change, g.direction) : null),
+        h("div", { class: "mini-value num" }, g.newest ? fmtValue(g.newest.latest, g.unit) : "–", h("span", { class: "note" }, ` ${g.suite.replace(/^arrow-|-benchmark$/g, "")}`)),
+        plot));
+      cards.push([g, plot]);
+    }
+    status.textContent = `${shown.length} of ${rows.length} benchmarks`;
+    more.hidden = shown.length >= rows.length;
+    requestAnimationFrame(() => { for (const [g, plot] of cards) drawSpark(plot, g.list, S.axis); });
+    setHash();
+  };
+  const select = (label, key, values, fmt = (x) => x) => h("label", {}, label, h("select", { onchange: (e) => { ctl[key] = e.target.value; ctl.n = 48; draw(); } }, values.map((v) => h("option", { value: v, selected: v === ctl[key] }, fmt(v)))));
+  const filter = h("input", { type: "search", placeholder: "filter by name", value: ctl.text, "aria-label": "filter benchmarks", oninput: (e) => { ctl.text = e.target.value; ctl.n = 48; draw(); } });
   const main = h("main", {},
-    h("h2", {}, "Apache Arrow C++ benchmarks, every commit on main"),
-    h("p", { class: "lead" }, "Measured by benchx on dedicated nodes, filed as documents, derived into these views. Changes are against the previous measured point of each series and are a heuristic until history-mode verdicts exist."),
     h("div", { class: "tiles" },
       tile("commits measured", st.commits),
       tile("benchmark series", st.series),
       tile("results", st.results.toLocaleString()),
       tile("nodes", st.nodes.join(", ") || "–", null, true),
       latest ? tile("last measured", h("a", { href: `#/c/${latest.sha}` }, latest.short), `${ago(latest.finished_at || latest.committer_date)} · ${latest.node}`, true) : tile("last measured", "–")),
-    h("div", { class: "cols", style: "margin-top:16px" },
-      moversCard("Regressed on the latest commit", L.movers.regressed, "regressed"),
-      moversCard("Improved on the latest commit", L.movers.improved, "improved")),
+    h("div", { class: "filters", style: "margin-top:16px" },
+      select("suite", "suite", ["all", ...suites], (v) => (v === "all" ? "all suites" : v)),
+      select("sort", "sort", ["change", "regressed", "improved", "noise", "name"], (v) => ({ change: "largest change", regressed: "regressed first", improved: "improved first", noise: "noisiest", name: "name" })[v]),
+      filter, status,
+      nodes.length > 1 ? h("span", {}, nodes.map((n) => h("span", { class: "legend-key" }, h("span", { class: "key", style: `border-color:${nodeColor(n)}` }), n))) : null),
+    h("p", { class: "note" }, `Each chart is the benchmark's last ${S.axis.length} measured commits; the change is against the previous measured point and is a heuristic until history-mode verdicts exist.`),
+    grid,
+    h("div", { style: "margin:12px 0 4px" }, more),
     h("h2", {}, "Recent commits"),
     table(["commit", "subject", "date", "node", ">suites", ">results", `>regressed >${L.notable * 100}%`, `>improved >${L.notable * 100}%`],
       L.recent_commits.map((c) => [
@@ -153,15 +204,8 @@ function renderLanding() {
       h("div", { class: "card" }, h("h3", {}, "Suite wall time on the latest commit"),
         table(["suite", "node", ">cases", ">failed", ">time"], L.suite_time.map((s) => [h("a", { href: `#/s/${encodeURIComponent(s.suite)}` }, s.suite), s.node, s.cases, s.failed || "0", `${Math.round(s.seconds / 60)} min`])))),
     footer());
+  draw();
   return main;
-}
-
-function moversCard(title, rows, kind) {
-  return h("div", { class: "card" }, h("h3", {}, title),
-    table(["benchmark", "node", ">change", ">noise", ""], rows.map((m) => [
-      h("span", {}, h("a", { href: benchHref(m) }, caseLabel(m)), h("div", { class: "note" }, m.suite)),
-      m.node, delta(m.rel_change, m.direction), fmtAbsPct(m.noise), gapTag(m)]),
-      { empty: kind === "regressed" ? "nothing regressed" : "nothing improved" }));
 }
 
 async function renderSuite(suite) {
@@ -457,7 +501,7 @@ async function route() {
     else if (parts[0] === "s" && parts[1]) view = await renderSuite(parts[1]);
     else if (parts[0] === "b" && parts[2]) view = await renderBench(parts[1], parts.slice(2).join("/"), query);  // a case name may itself contain '/'
     else if (parts[0] === "c" && parts[1]) view = await renderCommit(parts[1]);
-    else view = renderLanding();
+    else view = await renderLanding();
   } catch (e) {
     view = h("main", {}, h("h2", {}, "Could not load this view"), h("p", { class: "note" }, String(e.message || e)), h("p", {}, h("a", { href: "#/" }, "back to the overview")));
   }
