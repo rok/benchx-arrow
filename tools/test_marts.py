@@ -1,6 +1,6 @@
 """The derived tables' arithmetic, on a synthetic points table.
 
-marts.py's SQL takes a points glob, so the change, latest and movers tables can
+marts.py's SQL takes a points file, so the change, latest and movers tables can
 be checked without a benchx store: three commits, two series on one node, one
 series with a gap and a regression at the end.
 """
@@ -35,10 +35,9 @@ def tables(tmp_path):
         point("c1", 1, "c0", "quiet", 2.00), point("c3", 3, "c2", "quiet", 2.02),
         point("c3", 3, "c2", "broken", None, status="error"),
     ]
-    points_dir = tmp_path / "points"
-    points_dir.mkdir()
-    pq.write_table(pa.Table.from_pylist(rows), points_dir / "s.parquet")
-    glob = marts.parquet(points_dir / "*.parquet")
+    points_path = tmp_path / "points.parquet"
+    pq.write_table(pa.Table.from_pylist(rows), points_path)
+    glob = marts.parquet(points_path)
     changes = marts.query(marts.CHANGES_SQL.format(points=glob))
     changes_path = tmp_path / "changes.parquet"
     pq.write_table(changes, changes_path)

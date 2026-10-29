@@ -8,7 +8,9 @@ per view, the way ClickPy keeps one materialized view per chart. Everything here
 is derived: delete OUT and run again.
 
     commits.parquet          one row per measured commit x node, with ancestry and status
-    points/<suite>.parquet   one row per result, sorted by commit order (history charts)
+    points.parquet           one row per result, sorted by suite, case and commit order
+                             (history charts; row-group statistics let a reader fetch
+                             one benchmark's rows without the rest)
     changes.parquet          every point against the previous point of its series
     latest.parquet           one row per series: latest estimate, changes, noise, rank
     movers.parquet           the largest changes per commit x node (landing lists)
@@ -50,10 +52,12 @@ def query(sql: str) -> pa.Table:
 
 
 def write(table: pa.Table, path: Path, sort_by=None) -> int:
+    """Write with small row groups, so a reader using the row-group statistics on
+    the sort columns fetches little more than the rows it needs."""
     path.parent.mkdir(parents=True, exist_ok=True)
     if sort_by and table.num_rows:
         table = table.sort_by(sort_by)
-    pq.write_table(table, path, compression="zstd", row_group_size=4096)
+    pq.write_table(table, path, compression="zstd", row_group_size=2048, write_statistics=True)
     return table.num_rows
 
 
@@ -158,7 +162,7 @@ FROM (
 ) AS s
 LEFT JOIN (SELECT sha, node, commit_order, committer_date, ifNull(parent, '') AS parent FROM {commits}) AS c
     ON s.sha = c.sha AND s.node = c.node
-ORDER BY suite, commit_order, case, params, quantity, node
+ORDER BY suite, case, params, quantity, node, commit_order
 """
 
 # ---- changes ------------------------------------------------------------------
@@ -259,22 +263,18 @@ def main(argv=None):
     counts["commits"] = write(commits, out / "commits.parquet", sort_by=[("commit_order", "descending"), ("node", "ascending")])
 
     points = query(POINTS_SQL.format(store=parquet(args.store.resolve()), commits=parquet(out / "commits.parquet")))
-    points_dir = out / "points"
-    for stale in points_dir.glob("*.parquet"):
-        stale.unlink()
-    suites = sorted(set(points.column("suite").to_pylist())) if points.num_rows else []
-    counts["points"] = 0
+    counts["points"] = write(points, out / "points.parquet")
     suite_counts = {}
-    for suite in suites:
-        part = points.filter(pc.equal(points.column("suite"), suite))
-        suite_counts[suite] = write(part, points_dir / f"{suite}.parquet")
-        counts["points"] += suite_counts[suite]
+    if points.num_rows:
+        for suite, n in zip(*pc.value_counts(points.column("suite")).flatten()):
+            suite_counts[suite.as_py()] = n.as_py()
+    suites = sorted(suite_counts)
 
-    points_glob = parquet(points_dir / "*.parquet") if suites else None
-    if points_glob:
-        changes = query(CHANGES_SQL.format(points=points_glob))
+    if points.num_rows:
+        points_file = parquet(out / "points.parquet")
+        changes = query(CHANGES_SQL.format(points=points_file))
         counts["changes"] = write(changes, out / "changes.parquet")
-        latest = query(LATEST_SQL.format(points=points_glob))
+        latest = query(LATEST_SQL.format(points=points_file))
         counts["latest"] = write(latest, out / "latest.parquet")
         movers = query(MOVERS_SQL.format(changes=parquet(out / "changes.parquet")))
         counts["movers"] = write(movers, out / "movers.parquet")
@@ -295,7 +295,7 @@ def main(argv=None):
         "suites": suite_counts,
         "tables": {
             "commits": "commits.parquet",
-            "points": [f"points/{s}.parquet" for s in suites],
+            "points": "points.parquet",
             "changes": "changes.parquet",
             "latest": "latest.parquet",
             "movers": "movers.parquet",
