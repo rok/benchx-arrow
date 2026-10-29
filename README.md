@@ -70,7 +70,7 @@ site/                        the static page; site/data/ is generated and git-ig
 | table | one row per | for |
 |---|---|---|
 | `commits.parquet` | measured commit × node | landing stats, recent commits, status |
-| `points/<suite>.parquet` | result, sorted by commit order | history charts, variant and node breakdowns |
+| `points.parquet` | result, sorted by suite, case and commit order | history charts, variant and node breakdowns |
 | `changes.parquet` | point with a predecessor in its series | commit-against-previous tables |
 | `latest.parquet` | series (suite, case, params, quantity, node) | KPI tiles, search, noise ranks |
 | `movers.parquet` | the largest changes per commit × node | regressed and improved lists |
