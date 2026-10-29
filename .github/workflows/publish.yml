@@ -11,7 +11,7 @@ concurrency:
   group: publish
   cancel-in-progress: false
 env:
-  BENCHX_REPO: benchx-dev/benchx
+  BENCHX_REPO: rok/benchx   # must match the benchx the node runs; the schema is shared
   BENCHX_REF: main
 jobs:
   publish:

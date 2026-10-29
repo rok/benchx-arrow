@@ -93,3 +93,10 @@ Prototype. Known gaps, in the order they bite:
   alerts; `commit.json` records the ancestry it will need.
 - The summary is a table of the latest results. Charts and per-commit reports
   come after history mode.
+- The node and the publish job must run the same benchx (`BENCHX_REPO` and
+  `BENCHX_REF` in `publish.yml`); a result written under a newer schema is
+  rejected by an older store as malformed.
+
+Measured on the first run (two binaries, 94 results, one repetition): 2.3 MB of
+documents on disk, 75 KB compressed, so a full Arrow C++ run of about a
+thousand results costs on the order of a megabyte of repository per commit.
