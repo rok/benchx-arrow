@@ -22,3 +22,4 @@ done < <(cd "$ROOT" && find runs -type d -path '*/suites/*' -prune | sort)
 echo "ingested $n suite directories ($problems with problems) into $BENCHX_HOME/store.parquet" >&2
 
 "$PYTHON" "$ROOT/tools/marts.py" --store "$BENCHX_HOME/store.parquet" --runs "$ROOT/runs" --out "$ROOT/site/data"
+"$PYTHON" "$ROOT/tools/views.py" --data "$ROOT/site/data"
