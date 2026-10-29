@@ -57,8 +57,9 @@ queue/                       requests (empty files named after commits)
 runs/                        the documents (see runs/README.md)
 tools/build-site.sh          ingest runs/ into a store, then derive site/data (local or CI)
 tools/marts.py               the derived tables, in chDB SQL (documented at the top of the file)
+tools/views.py               the page's JSON views, in chDB SQL over those tables
 tools/test_marts.py          the tables' arithmetic on synthetic points
-site/                        the static page; site/data/ is generated and git-ignored
+site/                        the dashboard (index.html, app.js, style.css); site/data/ is generated and git-ignored
 .github/workflows/publish.yml   build the store and the tables, deploy site/ to Pages
 ```
 
@@ -82,9 +83,27 @@ commit's parent. It is a heuristic until benchx's comparator history mode
 produces verdicts with noise. `noise` is the median absolute consecutive change
 over a series' last 21 points.
 
+`tools/views.py` then writes `site/data/views/`: `landing.json`, `series.json`,
+`history/<suite>.json` and `commits/<sha>.json`, the documents the page reads.
+Every number on the page is computed there, by chDB; the page runs no engine.
+
+## The dashboard
+
+`site/` is a static page over those views, in the spirit of ClickPy and asv's
+web UI: an overview with the latest commit's movers and recent commits, a suites
+index, a suite page with one small history chart per benchmark, a benchmark page
+with KPI tiles, the history chart (uPlot) and its biggest moves, and a commit page
+listing every change against the previous measured point. Changes are colored by
+the quantity's direction and carry the series' noise beside them. Light and dark
+follow the OS, with a toggle. Data is fetched with cache-busting query strings
+because the Pages CDN caches files for four hours.
+
+To look at it locally after `tools/build-site.sh`: `python3 -m http.server -d site 8765`.
+
 GitHub Pages deploys only when the repository variable `PAGES_ENABLED` is
 `true` (`gh variable set PAGES_ENABLED --body true`), after Pages is enabled
-in the repository settings with GitHub Actions as the source.
+in the repository settings with GitHub Actions as the source. The site is at
+https://mihevc.org/benchx-arrow/.
 
 ## Setting up a node
 
