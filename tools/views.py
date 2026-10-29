@@ -8,6 +8,8 @@ tables, and written as small JSON documents under OUT/views:
     landing.json          stats, recent commits, movers (regressed / improved),
                           noisiest series, suite wall time on the latest commit
     series.json           one entry per series: the search index and the KPI tiles
+    sparks.json           every series' last SPARK_POINTS points, for the front page's
+                          grid of small charts, with the shared commit axis
     history/<suite>.json  every series of one suite as parallel arrays, plus the
                           suite's commit axis (history charts)
     commits/<sha>.json    one commit: its nodes' status and every change against
@@ -33,6 +35,7 @@ NOTABLE = 0.05
 RECENT_COMMITS = 30
 MOVERS = 15
 NOISIEST = 10
+SPARK_POINTS = 60
 
 
 def rows(sql: str) -> list[dict]:
@@ -132,6 +135,34 @@ def build_views(data: Path) -> dict:
     }
     dump(landing, out / "landing.json")
     counts["recent_commits"] = len(landing["recent_commits"])
+
+    # Sparks: the last SPARK_POINTS points of every series, for the front page grid.
+    spark_axis = rows(f"""
+        SELECT commit_order, s AS sha, substring(s, 1, 12) AS short, date
+        FROM (SELECT commit_order, any(sha) AS s, toString(any(committer_date)) AS date
+              FROM {points_t} GROUP BY commit_order)
+        ORDER BY commit_order DESC LIMIT {SPARK_POINTS}""")
+    spark_axis.reverse()
+    spark_series = rows(f"""
+        SELECT p.suite AS suite, p.case AS case, p.params AS params, p.quantity AS quantity, p.unit AS unit,
+               p.direction AS direction, p.node AS node, p.orders AS orders, p.estimates AS estimates,
+               lt.estimate AS latest, lt.vs_prev AS vs_prev, lt.noise AS noise, lt.points AS points, lt.sha AS sha
+        FROM (
+            SELECT suite, case, params, quantity, unit, direction, node,
+                   groupArray(commit_order) AS orders, groupArray(estimate) AS estimates
+            FROM (SELECT * FROM {points_t} WHERE status = 'success' AND estimate IS NOT NULL
+                  ORDER BY commit_order DESC LIMIT {SPARK_POINTS} BY suite, case, params, quantity, node)
+            GROUP BY suite, case, params, quantity, unit, direction, node
+        ) AS p
+        LEFT JOIN {latest_t} AS lt
+            ON p.suite = lt.suite AND p.case = lt.case AND p.params = lt.params
+               AND p.quantity = lt.quantity AND p.node = lt.node
+        ORDER BY suite, case, params, quantity, node""")
+    for r in spark_series:  # groupArray after ORDER BY DESC: put them back in commit order
+        pairs = sorted(zip(r["orders"], r["estimates"]))
+        r["orders"], r["estimates"] = [o for o, _ in pairs], [e for _, e in pairs]
+    dump({"axis": spark_axis, "series": spark_series}, out / "sparks.json")
+    counts["sparks"] = len(spark_series)
 
     # History per suite: parallel arrays per series, and the suite's commit axis.
     suites = [r["suite"] for r in rows(f"SELECT DISTINCT suite FROM {points_t} ORDER BY suite")]

@@ -84,14 +84,16 @@ produces verdicts with noise. `noise` is the median absolute consecutive change
 over a series' last 21 points.
 
 `tools/views.py` then writes `site/data/views/`: `landing.json`, `series.json`,
+`sparks.json` (the last 60 points of every series, for the front page),
 `history/<suite>.json` and `commits/<sha>.json`, the documents the page reads.
 Every number on the page is computed there, by chDB; the page runs no engine.
 
 ## The dashboard
 
 `site/` is a static page over those views, in the spirit of ClickPy and asv's
-web UI: an overview with the latest commit's movers and recent commits, a suites
-index, a suite page with one small history chart per benchmark, a benchmark page
+web UI: a front page with one small history chart per benchmark across every
+suite (sorted by largest change, filterable by suite and name, paged) above the
+recent commits, a suites index, a suite page with one small history chart per benchmark, a benchmark page
 with KPI tiles, the history chart (uPlot) and its biggest moves, and a commit page
 listing every change against the previous measured point. Changes are colored by
 the quantity's direction and carry the series' noise beside them. Light and dark
