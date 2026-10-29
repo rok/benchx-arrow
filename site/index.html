@@ -1,0 +1,19 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>benchx-arrow data</title>
+<style>body{font:15px/1.4 system-ui,sans-serif;max-width:52rem;margin:3rem auto;padding:0 1rem;color:#222}code,pre{font-size:.9em}table{border-collapse:collapse}td,th{padding:.2rem .6rem;text-align:left;border-bottom:1px solid #ddd}</style>
+<h1>benchx-arrow data</h1>
+<p>The derived tables behind the dashboard, rebuilt on every push of results. The page itself comes next; this is the data layer.</p>
+<div id="out">loading manifest.json…</div>
+<script type="module">
+const m = await (await fetch("data/manifest.json")).json();
+const c = m.counts, lc = m.latest_commit;
+const rows = Object.entries(m.tables).flatMap(([k, v]) => (Array.isArray(v) ? v : [v]).map(p => `<tr><td>${k}</td><td><a href="data/${p}">${p}</a></td></tr>`)).join("");
+document.getElementById("out").innerHTML = `
+<p>built ${m.built_at}</p>
+<table><tr><th>commits</th><td>${c.distinct_commits}</td></tr><tr><th>nodes</th><td>${c.nodes.join(", ")}</td></tr>
+<tr><th>series</th><td>${c.series}</td></tr><tr><th>results</th><td>${c.points}</td></tr></table>
+<p>latest: <code>${lc ? lc.short : "–"}</code> ${lc ? lc.subject : ""}</p>
+<h2>tables</h2><table>${rows}</table>
+<h2>notes</h2><pre>${JSON.stringify(m.notes, null, 1)}</pre>`;
+</script>

@@ -26,10 +26,13 @@ apache/arrow main ◀─ git fetch (timer) ─ benchmark node ─ git push ─�
 - **Requests are files.** Add `queue/<sha>` to backfill a skipped commit or to
   re-measure one. The node takes queue entries before anything on main and
   removes them with the commit that files the results.
-- **The store is a cache.** The GitHub Actions job ingests `runs/` into a benchx
-  Parquet store, keeps it as a cache and an artifact, and prints a summary.
-  Delete the cache and it rebuilds from the documents, because benchx's ingest is
-  idempotent and the documents are the system of record.
+- **The store is a cache, and the dashboard's tables are derived from it.** The
+  GitHub Actions job ingests `runs/` into a benchx Parquet store, then
+  `tools/marts.py` derives small, flat, per-view tables from it with chDB
+  (in process, SQL over Parquet): commits, points per suite, changes, latest,
+  movers. They are published to GitHub Pages with the page under `site/`. Delete
+  the cache and everything rebuilds from the documents, because benchx's ingest
+  is idempotent and the documents are the system of record.
 - **The provider builds, benchx measures.** `provider/arrow-provider.sh` speaks
   benchx's target-provider contract: fetch the commit, check it out into one
   reused worktree, configure and build incrementally with CMake, hand back a
@@ -52,8 +55,36 @@ node/node.env.example        the node's settings; copy to node/node.env
 node/benchx-arrow.{service,timer}   systemd user units for the tick
 queue/                       requests (empty files named after commits)
 runs/                        the documents (see runs/README.md)
-.github/workflows/publish.yml   ingest, summarize, cache the store
+tools/build-site.sh          ingest runs/ into a store, then derive site/data (local or CI)
+tools/marts.py               the derived tables, in chDB SQL (documented at the top of the file)
+tools/test_marts.py          the tables' arithmetic on synthetic points
+site/                        the static page; site/data/ is generated and git-ignored
+.github/workflows/publish.yml   build the store and the tables, deploy site/ to Pages
 ```
+
+## The derived tables
+
+`site/data/`, rebuilt by every publish and by `tools/build-site.sh` locally
+(needs `bx`, and a python with `chdb` and `pyarrow`: `BX=… PYTHON=… tools/build-site.sh`).
+
+| table | one row per | for |
+|---|---|---|
+| `commits.parquet` | measured commit × node | landing stats, recent commits, status |
+| `points/<suite>.parquet` | result, sorted by commit order | history charts, variant and node breakdowns |
+| `changes.parquet` | point with a predecessor in its series | commit-against-previous tables |
+| `latest.parquet` | series (suite, case, params, quantity, node) | KPI tiles, search, noise ranks |
+| `movers.parquet` | the largest changes per commit × node | regressed and improved lists |
+| `manifest.json` | the build | counts, latest commit, table list, definitions |
+
+`rel_change` is estimate over the previous measured point of the same series,
+minus one, with `prev_is_parent` and `gap` saying whether that point is the
+commit's parent. It is a heuristic until benchx's comparator history mode
+produces verdicts with noise. `noise` is the median absolute consecutive change
+over a series' last 21 points.
+
+GitHub Pages deploys only when the repository variable `PAGES_ENABLED` is
+`true` (`gh variable set PAGES_ENABLED --body true`), after Pages is enabled
+in the repository settings with GitHub Actions as the source.
 
 ## Setting up a node
 
