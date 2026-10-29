@@ -1,0 +1,68 @@
+# Derived from the repository, never a source of truth: ingest every run under
+# runs/ into a benchx store, summarize it, keep the store as a cache and an
+# artifact. Delete the cache and this job rebuilds the store from the documents.
+name: publish
+on:
+  push:
+    branches: [main]
+    paths: ["runs/**", ".github/workflows/publish.yml"]
+  workflow_dispatch:
+concurrency:
+  group: publish
+  cancel-in-progress: false
+env:
+  BENCHX_REPO: benchx-dev/benchx
+  BENCHX_REF: main
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.BENCHX_REPO }}
+          ref: ${{ env.BENCHX_REF }}
+          path: _benchx
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -q -e _benchx/prototype
+      - uses: actions/cache/restore@v4
+        with:
+          path: _home/store.parquet
+          key: store-${{ github.sha }}
+          restore-keys: store-
+      - name: ingest
+        env:
+          BENCHX_HOME: ${{ github.workspace }}/_home
+        run: |
+          mkdir -p _home
+          n=0
+          while IFS= read -r dir; do
+            bx ingest "$dir" >/dev/null || echo "::warning::ingest problems in $dir"
+            n=$((n + 1))
+          done < <(find runs -type d -path '*/suites/*' -prune | sort)
+          echo "ingested $n suite directories"
+      - name: summary
+        env:
+          BENCHX_HOME: ${{ github.workspace }}/_home
+        run: |
+          {
+            echo "## benchx-arrow store"
+            echo
+            echo "commits measured: $(ls runs | grep -vc README || true)"
+            echo "series: $(bx series | wc -l)"
+            echo
+            echo '```'
+            bx head --table --project arrow -n 40
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: _home/store.parquet
+          key: store-${{ github.sha }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: store
+          path: _home/store.parquet

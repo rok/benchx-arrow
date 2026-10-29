@@ -1,0 +1,11 @@
+[Unit]
+Description=benchx-arrow node tick
+
+[Timer]
+OnBootSec=5min
+# Counted from the end of the previous tick, so ticks never overlap.
+OnUnitInactiveSec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
