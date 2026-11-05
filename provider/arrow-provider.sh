@@ -20,9 +20,6 @@ set -euo pipefail
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT=$(cd "$HERE/.." && pwd)
 [[ -f $ROOT/node/node.env ]] && source "$ROOT/node/node.env"
-WORK=${BENCHX_ARROW_WORK:-$HOME/.benchx-arrow}
-ARROW_URL=${ARROW_URL:-https://github.com/apache/arrow.git}
-ARROW_REFERENCE=${ARROW_REFERENCE:-}
 BUILD_JOBS=${BUILD_JOBS:-$(nproc)}
 source "$HERE/clone-lib.sh"
 
@@ -118,14 +115,14 @@ step git -C "$SRC" submodule update -q --init --depth 1
 step cmake -S "$SRC/cpp" -B "$BUILD" "${CMAKE_FLAGS[@]}"
 step cmake --build "$BUILD" -j "$BUILD_JOBS"
 
-BUILD=$BUILD SRC=$SRC SHA=$sha HOW=$HOW ARROW_URL=$ARROW_URL CONFIGURATION=$configuration \
+BUILD=$BUILD SRC=$SRC SHA=$sha HOW=$HOW UPSTREAM_URL=$UPSTREAM_URL CONFIGURATION=$configuration \
 python3 - >"$SIDECAR" <<'PY'
 import json, os
-how = f"# {os.environ['ARROW_URL']} at {os.environ['SHA']} (incremental tree and build directory, reused across commits)\n" + os.environ["HOW"].rstrip("\n")
+how = f"# {os.environ['UPSTREAM_URL']} at {os.environ['SHA']} (incremental tree and build directory, reused across commits)\n" + os.environ["HOW"].rstrip("\n")
 print(json.dumps({
     "schema_version": "benchx/target-description/0.1.0",
     "target": {"kind": "build", "path": os.environ["BUILD"],
-               "source": {"uri": os.environ["ARROW_URL"], "type": "git"},
+               "source": {"uri": os.environ["UPSTREAM_URL"], "type": "git"},
                "source_dir": os.environ["SRC"]},
     "how_built": how,
     "activation": "export ARROW_TEST_DATA=" + os.path.join(os.environ["SRC"], "testing", "data")

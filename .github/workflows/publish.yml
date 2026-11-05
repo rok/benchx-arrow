@@ -7,7 +7,7 @@ name: publish
 on:
   push:
     branches: [main]
-    paths: ["runs/**", "tools/**", "site/**", ".github/workflows/publish.yml"]
+    paths: ["runs/**", "tools/**", "site/**", "project.json", ".github/workflows/publish.yml"]
   workflow_dispatch:
 concurrency:
   group: publish
@@ -16,26 +16,34 @@ permissions:
   contents: read
   pages: write
   id-token: write
-env:
-  BENCHX_REPO: rok/benchx   # must match the benchx the node runs; the schema is shared
-  BENCHX_REF: main
 jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # project.json pins the benchx the node runs (benchx.repository, benchx.ref):
+      # a result written under a newer schema is rejected by an older store.
+      - id: project
+        run: |
+          echo "benchx_repo=$(jq -r .benchx.repository project.json)" >> "$GITHUB_OUTPUT"
+          echo "benchx_ref=$(jq -r .benchx.ref project.json)" >> "$GITHUB_OUTPUT"
+          echo "name=$(jq -r .name project.json)" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
         with:
-          repository: ${{ env.BENCHX_REPO }}
-          ref: ${{ env.BENCHX_REF }}
+          repository: ${{ steps.project.outputs.benchx_repo }}
+          ref: ${{ steps.project.outputs.benchx_ref }}
           path: _benchx
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -q -e _benchx/prototype chdb
+      - run: pip install -q -e _benchx/prototype -r tools/requirements.txt
+      - name: test the derived tables and views
+        run: python -m pytest -q tools
       - uses: actions/cache/restore@v4
         with:
-          path: _home/store.parquet
+          path: |
+            _home/store.parquet
+            _home/ingested.txt
           key: store-${{ github.sha }}
           restore-keys: store-
       - name: ingest and derive
@@ -47,7 +55,7 @@ jobs:
           BENCHX_HOME: ${{ github.workspace }}/_home
         run: |
           {
-            echo "## benchx-arrow store"
+            echo "## ${{ steps.project.outputs.name }} benchmarks"
             echo
             echo "commits measured: $(ls runs | grep -vc README || true)"
             echo "series: $(bx series | wc -l)"
@@ -57,13 +65,15 @@ jobs:
             echo '```'
             echo
             echo '```'
-            bx head --table --project arrow -n 40
+            bx head --table --project "${{ steps.project.outputs.name }}" -n 40
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/cache/save@v4
         if: always()
         with:
-          path: _home/store.parquet
+          path: |
+            _home/store.parquet
+            _home/ingested.txt
           key: store-${{ github.sha }}
       - uses: actions/upload-artifact@v4
         with:
