@@ -1,12 +1,19 @@
-// benchx-arrow dashboard: a static page over the JSON views chDB writes in the
+// The benchx dashboard: a static page over the JSON views chDB writes in the
 // publish job (tools/views.py). No query engine runs here; every number shown
-// was computed there. Routes: #/ landing, #/s/<suite>, #/b/<suite>/<case>?params=&q=&node=,
-// #/c/<sha>. Data is fetched with cache-busting because the Pages CDN caches for hours.
+// was computed there. Routes: #/ overview, #/suites, #/s/<suite>,
+// #/b/<suite>/<case>?params=&q=&node=, #/c/<sha>, #/about. Names, links and the
+// upstream come from data/project.json (a copy of project.json). Data is fetched
+// with cache-busting because the Pages CDN caches for hours.
 
 const DATA = "data/";
-const GITHUB = "https://github.com/apache/arrow/commit/";
 const SERIES_VARS = ["--series-1", "--series-2", "--series-3", "--series-4", "--series-5", "--series-6", "--series-7", "--series-8"];
-const state = { v: "", manifest: null, landing: null, series: null, sparks: null, histories: new Map(), commits: new Map(), chart: null, nodeSlots: new Map() };
+const PAGE = 48;
+// The benchx mark (site/logo.svg), inline so the legs follow the page's ink in
+// both themes; the small variant (site/favicon.svg) is drawn heavier for 16-32 px.
+const MARK = '<svg viewBox="0 0 64 64" aria-hidden="true" class="mark"><rect x="8" y="10" width="48" height="8" rx="2" fill="var(--brand)"/><path d="M18 24 L46 52 M46 24 L18 52" stroke="currentColor" stroke-width="7" stroke-linecap="round"/></svg>';
+const MARK_SMALL = '<svg viewBox="0 0 64 64" aria-hidden="true" class="mark"><rect x="8" y="8" width="48" height="8" rx="2" fill="var(--brand)"/><path d="M18 26 L46 52 M46 26 L18 52" stroke="currentColor" stroke-width="8" stroke-linecap="round"/></svg>';
+function wordmark(small) { return h("span", { class: "benchx" }, h("span", { html: small ? MARK_SMALL : MARK }), h("span", { class: "wm" }, "bench", h("b", {}, "x"))); }
+const state = { v: "", project: null, manifest: null, landing: null, series: null, sparks: null, histories: new Map(), commits: new Map(), charts: [], cleanup: [], nodeSlots: new Map() };
 
 // ---- utilities ------------------------------------------------------------------
 
@@ -82,23 +89,51 @@ function ago(s) {
   if (m < 48 * 60) return `${Math.round(m / 60)} h ago`;
   return `${Math.round(m / 1440)} d ago`;
 }
-function verdict(rel, direction, flatBelow = 0.005) {
+function shortSuite(s) { return s.replace(/^arrow-|-benchmark$/g, ""); }
+function upstreamCommit(sha) { return (state.project.upstream?.commit_url || "").replace("{sha}", sha); }
+function runDocs(sha, node, file = "") {
+  const repo = state.project.repository;
+  return repo ? `${repo}/${file ? "blob" : "tree"}/main/runs/${sha}/${node}${file ? "/" + file : ""}` : null;
+}
+function multiNode() { return (state.landing?.stats.nodes || []).length > 1; }
+
+// A change is judged three ways: its direction (the quantity says whether up is
+// worse), its size (under 0.5 % is flat), and its size against the series' noise
+// (under twice the noise it is shown muted: observed, but not distinguishable
+// from run-to-run variation). None of it is a verdict; see the about page.
+const FLAT = 0.005;
+function verdict(rel, direction) {
   if (rel == null || !isFinite(rel)) return "none";
-  if (Math.abs(rel) < flatBelow) return "flat";
+  if (Math.abs(rel) < FLAT) return "flat";
   const worse = direction === "higher-is-better" ? rel < 0 : rel > 0;
   return worse ? "regressed" : "improved";
 }
+function changeWords(direction, unit) {
+  if (unit === "s" && direction !== "higher-is-better") return { worse: "slower", better: "faster" };
+  return { worse: "worse", better: "better" };
+}
+function withinNoise(rel, noise) { return noise != null && rel != null && Math.abs(rel) < 2 * noise; }
+// delta(rel, direction, {noise, unit}): noise undefined means "not known here",
+// null means "the series has too few points for one".
 function delta(rel, direction, opts = {}) {
   const v = verdict(rel, direction);
-  const glyph = v === "regressed" ? "▲" : v === "improved" ? "▼" : v === "flat" ? "■" : "";
-  const words = { regressed: "regressed", improved: "improved", flat: "no change", none: "no comparison" }[v];
-  return h("span", { class: `delta num ${v}`, title: words, "aria-label": `${fmtPct(rel)} ${words}` },
+  const real = v === "regressed" || v === "improved";
+  const within = real && withinNoise(rel, opts.noise);
+  const w = changeWords(direction, opts.unit);
+  const glyph = v === "none" ? "" : v === "flat" ? "■" : rel > 0 ? "▲" : "▼";
+  const word = { regressed: w.worse, improved: w.better, flat: "no change", none: "no comparison" }[v];
+  let title = v === "none" ? word : `${fmtPct(rel, 2)}: ${word}`;
+  const unknown = real && opts.noise === null;
+  if (real && opts.noise != null) title += within ? ` · smaller than twice the series' usual commit-to-commit movement (${fmtAbsPct(opts.noise)}), which changes of this size are common within` : ` · ${(Math.abs(rel) / opts.noise).toFixed(1)}× the series' usual commit-to-commit movement (${fmtAbsPct(opts.noise)})`;
+  else if (unknown) title += " · no noise estimate yet (fewer than 3 measurements): unconfirmed";
+  return h("span", { class: `delta num ${v}${within ? " within" : ""}${unknown ? " unknown" : ""}`, title, "aria-label": title },
     glyph && h("span", { class: "glyph", "aria-hidden": "true" }, glyph), fmtPct(rel, opts.digits ?? 1));
 }
-function benchHref(s) {
+function benchHref(s, { node } = {}) {
   const q = new URLSearchParams();
   if (s.params) q.set("params", s.params);
   if (s.quantity && s.quantity !== "wall-time") q.set("q", s.quantity);
+  if (node && multiNode()) q.set("node", node);
   const qs = q.toString();
   return `#/b/${encodeURIComponent(s.suite)}/${encodeURIComponent(s.case)}${qs ? "?" + qs : ""}`;
 }
@@ -117,198 +152,362 @@ function table(headers, rows, opts = {}) {
 function tile(label, value, hint, small) {
   return h("div", { class: "tile" }, h("div", { class: "label" }, label), h("div", { class: `value ${small ? "small" : ""}` }, value), hint && h("div", { class: "hint" }, hint));
 }
+function chip(label, value, tone) {
+  return h("span", { class: `chip ${tone || ""}` }, h("b", { class: "num" }, value), " ", label);
+}
+function failTag(reason, text = "failed") { return h("span", { class: "tag failed", title: reason || "" }, text); }
 function gapTag(ch) {
   if (ch.prev_is_parent) return null;
-  return h("span", { class: "tag gap", title: `the previous measured commit is ${ch.gap} commits back, not the parent` }, `gap ${ch.gap}`);
+  const title = `The baseline ${ch.prev_sha.slice(0, 12)} is not this commit's parent: the commits in between were not measured for this series, so this change may belong to any of them. Queue them to narrow it down.`;
+  return h("span", { class: "tag gap", title }, "not parent");
+}
+function stateTag(c) {
+  if (c.state === "finished") return null;
+  return h("span", { class: `tag ${c.state === "failed" ? "failed" : ""}` }, c.state === "failed" ? "run failed" : c.state);
+}
+function sharedLegend(nodes) {
+  return nodes.length > 1 ? h("span", { class: "legend" }, nodes.map((n) => h("span", { class: "legend-key" }, h("span", { class: "key", style: `border-color:${nodeColor(n)}` }), n))) : null;
 }
 
-// ---- views ----------------------------------------------------------------------
+// ---- benchmark cards (overview and suite pages) ------------------------------------
 
-async function renderLanding() {
-  const L = state.landing, st = L.stats, latest = st.latest;
-  if (!state.sparks) state.sparks = await getJSON("views/sparks.json");
-  const S = state.sparks;
-  // One card per benchmark (case, params, quantity); its nodes are lines on the same chart.
+// groups: one card per (suite, case, params, quantity); its nodes are lines on one chart.
+function groupSeries(list, extra = () => ({})) {
   const groups = new Map();
-  for (const s of S.series) {
+  for (const s of list) {
     const key = `${s.suite}|${s.case}|${s.params}|${s.quantity}`;
     if (!groups.has(key)) groups.set(key, { suite: s.suite, case: s.case, params: s.params, quantity: s.quantity, unit: s.unit, direction: s.direction, list: [] });
     groups.get(key).list.push(s);
   }
-  const all = [...groups.values()].map((g) => {
-    const newest = g.list.filter((s) => s.latest != null).sort((a, b) => b.orders[b.orders.length - 1] - a.orders[a.orders.length - 1])[0];
-    return { ...g, newest, change: newest?.vs_prev ?? null, noise: newest?.noise ?? null, v: newest ? verdict(newest.vs_prev, g.direction) : "none" };
-  });
-  const suites = [...new Set(all.map((g) => g.suite))].sort();
-  const nodes = [...new Set(S.series.map((s) => s.node))].sort();
-  const q = new URLSearchParams((location.hash.split("?")[1]) || "");
-  const ctl = { suite: q.get("suite") || "all", sort: q.get("sort") || "change", text: q.get("f") || "", n: 48 };
-  const setHash = () => { const p = new URLSearchParams(); if (ctl.suite !== "all") p.set("suite", ctl.suite); if (ctl.sort !== "change") p.set("sort", ctl.sort); if (ctl.text) p.set("f", ctl.text); history.replaceState(null, "", "#/" + (p.toString() ? "?" + p : "")); };
-  const sorters = {
-    change: (a, b) => Math.abs(b.change ?? -1) - Math.abs(a.change ?? -1),
-    regressed: (a, b) => (b.v === "regressed") - (a.v === "regressed") || Math.abs(b.change ?? -1) - Math.abs(a.change ?? -1),
-    improved: (a, b) => (b.v === "improved") - (a.v === "improved") || Math.abs(b.change ?? -1) - Math.abs(a.change ?? -1),
-    noise: (a, b) => (b.noise ?? -1) - (a.noise ?? -1),
-    name: (a, b) => a.suite.localeCompare(b.suite) || a.case.localeCompare(b.case) || a.params.localeCompare(b.params),
-  };
-  const grid = h("div", { class: "grid" });
-  const status = h("span", { class: "note" });
-  const more = h("button", { class: "ghost", onclick: () => { ctl.n += 48; draw(); } }, "show 48 more");
-  const draw = () => {
-    const needle = ctl.text.trim().toLowerCase();
-    const rows = all.filter((g) => (ctl.suite === "all" || g.suite === ctl.suite) && (!needle || `${g.suite} ${g.case} ${g.params}`.toLowerCase().includes(needle))).sort(sorters[ctl.sort] || sorters.change);
-    grid.replaceChildren();
-    const shown = rows.slice(0, ctl.n), cards = [];
-    for (const g of shown) {
-      const plot = h("div", { class: "spark" });
-      grid.append(h("a", { class: "mini", href: benchHref(g) },
-        h("div", { class: "mini-head" }, h("span", { class: "mono name", title: caseLabel(g) }, caseLabel(g)), g.newest ? delta(g.change, g.direction) : null),
-        h("div", { class: "mini-value num" }, g.newest ? fmtValue(g.newest.latest, g.unit) : "–", h("span", { class: "note" }, ` ${g.suite.replace(/^arrow-|-benchmark$/g, "")}`)),
-        plot));
-      cards.push([g, plot]);
-    }
-    status.textContent = `${shown.length} of ${rows.length} benchmarks`;
-    more.hidden = shown.length >= rows.length;
-    requestAnimationFrame(() => { for (const [g, plot] of cards) drawSpark(plot, g.list, S.axis); });
-    setHash();
-  };
-  const select = (label, key, values, fmt = (x) => x) => h("label", {}, label, h("select", { onchange: (e) => { ctl[key] = e.target.value; ctl.n = 48; draw(); } }, values.map((v) => h("option", { value: v, selected: v === ctl[key] }, fmt(v)))));
-  const filter = h("input", { type: "search", placeholder: "filter by name", value: ctl.text, "aria-label": "filter benchmarks", oninput: (e) => { ctl.text = e.target.value; ctl.n = 48; draw(); } });
-  const main = h("main", {},
-    h("div", { class: "tiles" },
-      tile("commits measured", st.commits),
-      tile("benchmark series", st.series),
-      tile("results", st.results.toLocaleString()),
-      tile("nodes", st.nodes.join(", ") || "–", null, true),
-      latest ? tile("last measured", h("a", { href: `#/c/${latest.sha}` }, latest.short), `${ago(latest.finished_at || latest.committer_date)} · ${latest.node}`, true) : tile("last measured", "–")),
-    h("div", { class: "filters", style: "margin-top:16px" },
-      select("suite", "suite", ["all", ...suites], (v) => (v === "all" ? "all suites" : v)),
-      select("sort", "sort", ["change", "regressed", "improved", "noise", "name"], (v) => ({ change: "largest change", regressed: "regressed first", improved: "improved first", noise: "noisiest", name: "name" })[v]),
-      filter, status,
-      nodes.length > 1 ? h("span", {}, nodes.map((n) => h("span", { class: "legend-key" }, h("span", { class: "key", style: `border-color:${nodeColor(n)}` }), n))) : null),
-    h("p", { class: "note" }, `Each chart is the benchmark's last ${S.axis.length} measured commits; the change is against the previous measured point and is a heuristic until history-mode verdicts exist.`),
-    grid,
-    h("div", { style: "margin:12px 0 4px" }, more),
-    h("h2", {}, "Recent commits"),
-    table(["commit", "subject", "date", "node", ">suites", ">results", `>regressed >${L.notable * 100}%`, `>improved >${L.notable * 100}%`],
-      L.recent_commits.map((c) => [
-        h("a", { href: `#/c/${c.sha}`, class: "mono" }, c.short),
-        h("span", {}, c.subject.length > 90 ? c.subject.slice(0, 88) + "…" : c.subject, " ", h("a", { href: GITHUB + c.sha, target: "_blank", rel: "noopener", class: "note" }, "github")),
-        fmtDate(c.committer_date), c.node,
-        h("span", {}, String(c.suites_ok), c.suites_failed ? h("span", { class: "tag failed", style: "margin-left:6px" }, `${c.suites_failed} failed`) : null),
-        c.results, c.compared ? c.regressed : "–", c.compared ? c.improved : "–"])),
-    h("div", { class: "cols", style: "margin-top:24px" },
-      h("div", { class: "card" }, h("h3", {}, "Noisiest series"),
-        h("p", { class: "note" }, "Median absolute change between consecutive points over the last 21. Changes on these need more evidence."),
-        table(["benchmark", "node", ">noise", ">points"], L.noisiest.map((s) => [h("a", { href: benchHref(s) }, caseLabel(s)), s.node, fmtAbsPct(s.noise), s.points]), { empty: "needs at least three points per series" })),
-      h("div", { class: "card" }, h("h3", {}, "Suite wall time on the latest commit"),
-        table(["suite", "node", ">cases", ">failed", ">time"], L.suite_time.map((s) => [h("a", { href: `#/s/${encodeURIComponent(s.suite)}` }, s.suite), s.node, s.cases, s.failed || "0", `${Math.round(s.seconds / 60)} min`])))),
-    footer());
-  draw();
-  return main;
+  return [...groups.values()].map((g) => ({ ...g, ...extra(g) }));
 }
 
-async function renderSuite(suite) {
-  const rows = state.series.filter((s) => s.suite === suite);
-  const nodes = [...new Set(rows.map((r) => r.node))].sort();
-  let hist = state.histories.get(suite);
-  if (!hist) { hist = await getJSON(`views/history/${encodeURIComponent(suite)}.json`); state.histories.set(suite, hist); }
-  // asv-style summary: one small history per benchmark (all nodes), newest value and change beside it.
-  const groups = new Map();
-  for (const s of Object.values(hist.series)) {
-    const key = `${s.case}|${s.params}|${s.quantity}`;
-    if (!groups.has(key)) groups.set(key, { case: s.case, params: s.params, quantity: s.quantity, unit: s.unit, direction: s.direction, suite, list: [] });
-    groups.get(key).list.push(s);
-  }
-  const latestBy = new Map(rows.map((r) => [`${r.case}|${r.params}|${r.quantity}|${r.node}`, r]));
-  const grid = h("div", { class: "grid" });
-  const cards = [];
-  for (const g of [...groups.values()].sort((a, b) => a.case.localeCompare(b.case) || a.params.localeCompare(b.params))) {
-    const newest = g.list.map((s) => latestBy.get(`${s.case}|${s.params}|${s.quantity}|${s.node}`)).filter(Boolean).sort((a, b) => b.commit_order - a.commit_order)[0];
-    const plot = h("div", { class: "spark" });
-    const card = h("a", { class: "mini", href: benchHref(g) },
-      h("div", { class: "mini-head" }, h("span", { class: "mono name" }, caseLabel(g)), newest ? delta(newest.vs_prev, g.direction) : null),
-      h("div", { class: "mini-value num" }, newest ? fmtValue(newest.estimate, g.unit) : "–", h("span", { class: "note" }, newest && g.list.length > 1 ? ` ${newest.node}` : "")),
-      plot);
-    cards.push([g, plot]);
-    grid.append(card);
-  }
-  const main = h("main", {},
-    h("div", { class: "crumbs" }, h("a", { href: "#/" }, "home"), " / suite"),
-    h("h2", {}, suite),
-    h("p", { class: "lead" }, `${groups.size} benchmarks, ${rows.length} series on ${nodes.join(", ")}. Each chart is the benchmark's history over the ${hist.commits.length} measured commits; the change is against the previous measured point.`),
-    nodes.length > 1 ? h("div", { class: "filters" }, h("span", { class: "note" }, "nodes: "), nodes.map((n) => h("span", { class: "legend-key" }, h("span", { class: "key", style: `border-color:${nodeColor(n)}` }), n))) : null,
-    grid,
-    h("details", { class: "table-view" }, h("summary", {}, "Table view"),
-      table(["benchmark", "quantity", "node", ">latest", ">vs previous", ">vs 10 back", ">noise", ">points"],
-        rows.map((s) => [h("a", { href: benchHref(s) }, caseLabel(s)), s.quantity, s.node, fmtValue(s.estimate, s.unit), delta(s.vs_prev, s.direction), delta(s.vs_10, s.direction), fmtAbsPct(s.noise), s.points]))),
-    footer());
-  requestAnimationFrame(() => { for (const [g, plot] of cards) drawSpark(plot, g.list, hist.commits); });
-  return main;
+function benchCard(g, { showSuite = true } = {}) {
+  const n = g.newest;
+  const failed = g.status && g.status !== "success";
+  const plot = h("div", { class: "spark" });
+  const sub = [g.quantity !== "wall-time" ? g.quantity : null, showSuite ? shortSuite(g.suite) : null, n && multiNode() ? n.node : null].filter(Boolean).join(" · ");
+  const points = n?.points ?? 0;
+  const card = h("a", { class: `mini${failed ? " failed" : ""}`, href: benchHref(g, { node: n?.node }) },
+    h("div", { class: "mini-head" },
+      h("span", { class: "mono name", title: caseLabel(g) }, caseLabel(g)),
+      n ? delta(g.change, g.direction, { noise: n.noise, unit: g.unit }) : null),
+    h("div", { class: "mini-value" }, h("span", { class: "num" }, n ? fmtValue(n.estimate ?? n.latest, g.unit) : "–"), sub && h("span", { class: "note" }, sub)),
+    plot,
+    h("div", { class: "mini-foot" },
+      failed ? failTag(g.reason, "failed last run") : h("span", {}, points === 1 ? "1 measurement" : `${points} measurements`),
+      h("span", {}, n?.noise != null ? `noise ${fmtAbsPct(n.noise)}` : points ? "noise: needs 3+" : "")));
+  return [card, plot];
 }
 
 function drawSpark(el, seriesList, axis) {
   const index = new Map(axis.map((c, i) => [c.commit_order, i]));
   const xs = axis.map((_, i) => i);
-  const ys = seriesList.map((s) => { const col = new Array(xs.length).fill(null); s.orders.forEach((o, k) => { if (s.estimates[k] != null) col[index.get(o)] = s.estimates[k]; }); return col; });
+  const ys = seriesList.map((s) => { const col = new Array(xs.length).fill(null); s.orders.forEach((o, k) => { if (s.estimates[k] != null && index.has(o)) col[index.get(o)] = s.estimates[k]; }); return col; });
   const vals = ys.flat().filter((v) => v != null);
-  if (!vals.length) {
-    const failed = seriesList.some((s) => s.statuses.some((st) => st && st !== "success"));
-    el.append(h("div", { class: "note" }, failed ? h("span", { class: "tag failed" }, "failed on every commit") : "no data"));
-    return;
-  }
-  const lo = Math.min(...vals), hi = Math.max(...vals), pad = (hi - lo) * 0.15 || hi * 0.05 || 1;
+  if (!vals.length) { el.append(h("div", { class: "spark-empty" }, "no successful measurement")); return; }
+  // At least ±3 % of the middle stays visible, so a 0.5 % wiggle looks flat
+  // instead of filling the card the way a 50 % jump does.
+  const lo = Math.min(...vals), hi = Math.max(...vals), mid = (lo + hi) / 2;
+  const half = Math.max((hi - lo) * 0.6, Math.abs(mid) * 0.03, 1e-12);
   const width = Math.max(120, el.clientWidth || 240);
-  new uPlot({
-    width, height: 56, legend: { show: false }, cursor: { show: false },
-    scales: { x: { time: false, range: [-0.5, xs.length - 0.5] }, y: { range: [lo - pad, hi + pad] } },
+  const chart = new uPlot({
+    width, height: 52, legend: { show: false }, cursor: { show: false },
+    scales: { x: { time: false, range: [-0.5, xs.length - 0.5] }, y: { range: [mid - half, mid + half] } },
     axes: [{ show: false }, { show: false }],
-    series: [{}, ...seriesList.map((s) => ({ stroke: nodeColor(s.node), width: 1.5, spanGaps: true, points: { show: xs.length <= 12, size: 6, stroke: nodeColor(s.node), fill: cssVar("--surface"), width: 1.5 } }))],
+    series: [{}, ...seriesList.map((s) => ({ stroke: nodeColor(s.node), width: 1.5, spanGaps: true, points: { show: xs.length <= 12, size: 5, stroke: nodeColor(s.node), fill: cssVar("--surface"), width: 1.5 } }))],
   }, [xs, ...ys], el);
+  state.charts.push(chart);
 }
+
+function drawCards(grid, cards, axisFor) {
+  requestAnimationFrame(() => { for (const [g, plot] of cards) drawSpark(plot, g.list, axisFor(g)); });
+}
+
+// ---- overview -----------------------------------------------------------------------
+
+async function renderLanding() {
+  const L = state.landing;
+  if (!L.stats.results) return renderEmpty();
+  if (!state.sparks) state.sparks = await getJSON("views/sparks.json");
+  const S = state.sparks;
+  // sparks.json holds successful points only; a series that never succeeded
+  // still gets a card (an empty chart and its failure) from series.json.
+  const sparked = new Set(S.series.map((s) => `${s.suite}|${s.case}|${s.params}|${s.quantity}|${s.node}`));
+  const never = state.series.filter((s) => !s.points && !sparked.has(`${s.suite}|${s.case}|${s.params}|${s.quantity}|${s.node}`))
+    .map((s) => ({ ...s, orders: [], estimates: [], latest: null }));
+  const all = groupSeries([...S.series, ...never], (g) => {
+    const newest = g.list.filter((s) => s.latest != null).sort((a, b) => b.orders[b.orders.length - 1] - a.orders[a.orders.length - 1])[0];
+    // Status, value and link all describe one node: the newest one's, or the failing one when none succeeded.
+    const failing = g.list.find((s) => s.status && s.status !== "success" && (!newest || s.node === newest.node));
+    return { newest, change: newest?.vs_prev ?? null, noise: newest?.noise ?? null, v: newest ? verdict(newest.vs_prev, g.direction) : "none",
+      status: failing ? failing.status : "success", reason: failing?.reason };
+  });
+  const suites = [...new Set(all.map((g) => g.suite))].sort();
+  const nodes = [...new Set(S.series.map((s) => s.node))].sort();
+  const q = new URLSearchParams((location.hash.split("?")[1]) || "");
+  const ctl = { suite: q.get("suite") || "all", sort: q.get("sort") || "change", text: q.get("f") || "", n: PAGE };
+  const setHash = () => { const p = new URLSearchParams(); if (ctl.suite !== "all") p.set("suite", ctl.suite); if (ctl.sort !== "change") p.set("sort", ctl.sort); if (ctl.text) p.set("f", ctl.text); history.replaceState(null, "", "#/" + (p.toString() ? "?" + p : "")); };
+  // Missing comparisons sort last; changes within noise rank below real ones of the same size.
+  const size = (g) => (g.change == null ? -1 : Math.abs(g.change) * (withinNoise(g.change, g.noise) ? 0.5 : 1));
+  const sorters = {
+    change: (a, b) => size(b) - size(a),
+    regressed: (a, b) => (b.v === "regressed") - (a.v === "regressed") || size(b) - size(a),
+    improved: (a, b) => (b.v === "improved") - (a.v === "improved") || size(b) - size(a),
+    failing: (a, b) => (b.status !== "success") - (a.status !== "success") || size(b) - size(a),
+    noise: (a, b) => (b.noise ?? -1) - (a.noise ?? -1),
+    name: (a, b) => a.suite.localeCompare(b.suite) || a.case.localeCompare(b.case) || a.params.localeCompare(b.params),
+  };
+  const grid = h("div", { class: "grid" });
+  const status = h("span", { class: "note" });
+  const more = h("button", { class: "ghost", onclick: () => { ctl.n += PAGE; draw(); } }, `show ${PAGE} more`);
+  const draw = () => {
+    const needle = ctl.text.trim().toLowerCase();
+    const rows = all.filter((g) => (ctl.suite === "all" || g.suite === ctl.suite) && (!needle || `${g.suite} ${g.case} ${g.params}`.toLowerCase().includes(needle))).sort(sorters[ctl.sort] || sorters.change);
+    destroyCharts();
+    grid.replaceChildren();
+    const shown = rows.slice(0, ctl.n), cards = [];
+    for (const g of shown) { const [card, plot] = benchCard(g); grid.append(card); cards.push([g, plot]); }
+    if (!shown.length) grid.append(h("p", { class: "empty" }, "no benchmark matches"));
+    status.textContent = `${shown.length} of ${rows.length} benchmarks`;
+    more.hidden = shown.length >= rows.length;
+    drawCards(grid, cards, () => S.axis);
+    setHash();
+  };
+  const select = (label, key, values, fmt = (x) => x) => h("label", {}, label, h("select", { onchange: (e) => { ctl[key] = e.target.value; ctl.n = PAGE; draw(); } }, values.map((v) => h("option", { value: v, selected: v === ctl[key] }, fmt(v)))));
+  const filter = h("input", { type: "search", placeholder: "filter by name", value: ctl.text, "aria-label": "filter benchmarks", oninput: (e) => { ctl.text = e.target.value; ctl.n = PAGE; draw(); } });
+  const st = L.stats;
+  const main = h("main", {},
+    problemsBanner(),
+    ...L.latest_runs.map((run) => latestRun(run, L)),
+    h("p", { class: "inventory note" },
+      `${st.commits} commits measured · ${st.series} series · ${st.results.toLocaleString()} results · `,
+      st.nodes.length === 1 ? `node ${st.nodes[0]}` : `nodes ${st.nodes.join(", ")}`, " · ", h("a", { href: "#/about" }, "how to read this page")),
+    h("h2", { id: "all" }, "All benchmarks"),
+    h("div", { class: "filters" },
+      select("suite", "suite", ["all", ...suites], (v) => (v === "all" ? "all suites" : v)),
+      select("sort", "sort", Object.keys(sorters), (v) => ({ change: "largest change", regressed: "regressed first", improved: "improved first", failing: "failing first", noise: "noisiest", name: "name" })[v]),
+      filter, status, sharedLegend(nodes)),
+    h("p", { class: "note" }, `Each chart shows the last ${S.axis.length} measured commits. The change compares the newest measurement with the one before it; muted changes are within twice the series' noise.`),
+    grid,
+    h("div", { class: "more" }, more),
+    h("h2", {}, "Recent commits"),
+    commitsTable(L.recent_commits, L.notable),
+    h("div", { class: "cols" },
+      h("section", { class: "card" }, h("h3", {}, "Noisiest series"),
+        h("p", { class: "note" }, "Median change between consecutive measurements, over the last 21. A change on these needs more evidence."),
+        table(["benchmark", "node", ">noise", ">points"], L.noisiest.map((s) => [h("a", { href: benchHref(s, { node: s.node }) }, caseLabel(s)), s.node, fmtAbsPct(s.noise), s.points]), { empty: "needs at least three measurements per series" })),
+      h("section", { class: "card" }, h("h3", {}, "Suite wall time on the latest commit"),
+        table(["suite", "node", ">cases", ">failed", ">time"], L.suite_time.map((s) => [h("a", { href: `#/s/${encodeURIComponent(s.suite)}` }, s.suite), s.node, s.cases, s.failed ? h("span", { class: "bad" }, s.failed) : "0", s.seconds < 120 ? `${s.seconds} s` : `${Math.round(s.seconds / 60)} min`])))),
+    footer());
+  draw();
+  return main;
+}
+
+// The first thing on the page: what the newest run on a node found.
+function latestRun(run, L) {
+  const pct = `${Math.round(L.notable * 100)}%`;
+  const recent = L.last_executed?.[run.node];
+  const other = recent && recent.sha !== run.sha ? recent : null;
+  const mine = (list) => list.filter((m) => m.node === run.node && m.sha === run.sha).slice(0, 5);
+  const regressed = mine(L.movers.regressed), improved = mine(L.movers.improved);
+  const failures = L.failures.filter((f) => f.node === run.node);
+  const moverList = (title, list, tone) => h("div", { class: "movers" },
+    h("h3", {}, title),
+    list.length ? h("ol", {}, list.map((m) => h("li", {},
+      h("a", { href: benchHref(m, { node: m.node }), class: "mono name", title: `${caseLabel(m)} (${m.suite})` }, caseLabel(m)),
+      h("span", { class: "num from-to note" }, `${fmtValue(m.prev_estimate, m.unit)} → ${fmtValue(m.estimate, m.unit)}`),
+      h("span", { class: "delta-cell" }, m.prev_is_parent ? null : gapTag(m), delta(m.rel_change, m.direction, { noise: m.noise, unit: m.unit })))))
+      : h("p", { class: "note" }, !run.compared ? "no earlier measurement of these benchmarks to compare with"
+        : tone === "bad" ? `nothing got worse by more than 0.5% (${run.compared} compared)` : `nothing got better by more than 0.5% (${run.compared} compared)`));
+  const health = run.state !== "finished" ? "bad" : run.failed_results || run.suites_failed ? "warn" : "good";
+  return h("section", { class: `hero ${health}` },
+    h("div", { class: "hero-head" },
+      h("div", {},
+        h("div", { class: "eyebrow" }, `Newest commit measured on ${run.node} · run ${ago(run.finished_at || run.started_at) || fmtDate(run.committer_date)}`),
+        h("h2", {}, h("a", { href: `#/c/${run.sha}`, class: "mono" }, run.short), " ", run.subject),
+        h("div", { class: "note" }, `committed ${fmtDate(run.committer_date)} · `, h("a", { href: upstreamCommit(run.sha), target: "_blank", rel: "noopener" }, "upstream commit"),
+          runDocs(run.sha, run.node) ? [" · ", h("a", { href: runDocs(run.sha, run.node, "log.txt"), target: "_blank", rel: "noopener" }, "run log")] : null)),
+      h("a", { class: "button", href: `#/c/${run.sha}` }, "All changes in this commit →")),
+    other ? h("div", { class: `banner ${other.state === "finished" && !other.failed_results ? "" : "bad"}` }, `Most recent run on ${run.node}: `,
+      h("a", { href: `#/c/${other.sha}`, class: "mono" }, other.short), ` (an older commit, ${other.reason || "requested"}) finished ${ago(other.finished_at || other.started_at)}: `,
+      other.state === "finished" ? `${other.results} results, ${other.failed_results} failed.` : h("b", {}, other.state)) : null,
+    h("div", { class: "chips" },
+      chip("results", run.results.toLocaleString()),
+      chip("failed", run.failed_results, run.failed_results ? "bad" : "good"),
+      chip(`regressed > ${pct}`, run.regressed, run.regressed ? "bad" : ""),
+      chip(`improved > ${pct}`, run.improved, run.improved ? "good" : ""),
+      chip("compared with an earlier run", run.compared),
+      run.state !== "finished" ? chip("", run.state, "bad") : null),
+    h("div", { class: "cols tight" }, moverList("Largest regressions", regressed, "bad"), moverList("Largest improvements", improved, "good")),
+    failures.length ? h("details", { class: "failures", open: failures.length <= 6 },
+      h("summary", {}, h("span", { class: "bad" }, `${failures.length} benchmark${failures.length > 1 ? "s" : ""} failed`), " on this run"),
+      h("ul", {}, failures.map((f) => h("li", {}, h("a", { href: benchHref(f, { node: f.node }), class: "mono" }, caseLabel(f)), " ", h("span", { class: "note" }, shortSuite(f.suite)), " ",
+        h("code", { class: "reason" }, f.reason || f.status), f.last_success_sha ? null : h("span", { class: "note" }, " · never succeeded")))))
+      : null);
+}
+
+function commitsTable(list, notable) {
+  const pct = `${Math.round(notable * 100)}%`;
+  return table(["commit", "subject", "date", "node", ">results", ">failed", `>regressed > ${pct}`, `>improved > ${pct}`],
+    list.map((c) => [
+      h("a", { href: `#/c/${c.sha}`, class: "mono" }, c.short),
+      h("span", {}, c.subject.length > 90 ? c.subject.slice(0, 88) + "…" : c.subject, " ", stateTag(c)),
+      fmtDate(c.committer_date), c.node, c.results,
+      c.failed_results ? h("span", { class: "bad" }, c.failed_results) : "0",
+      c.compared ? (c.regressed ? h("span", { class: "delta regressed" }, c.regressed) : "0") : "–",
+      c.compared ? (c.improved ? h("span", { class: "delta improved" }, c.improved) : "0") : "–"]),
+    { empty: "no runs filed yet" });
+}
+
+function problemsBanner() {
+  const n = state.manifest.counts.ingest_problems || 0;
+  return n ? h("div", { class: "banner bad" }, `${n} run director${n > 1 ? "ies were" : "y was"} rejected by the ingest and ${n > 1 ? "are" : "is"} missing from this page. The publish job's log names them; a result written by a newer benchx than the publisher pins (project.json) is the usual cause.`) : null;
+}
+
+// No results yet: say what state the project is in and what to do next.
+function renderEmpty() {
+  const L = state.landing, repo = state.project.repository;
+  return h("main", {},
+    problemsBanner(),
+    h("section", { class: "hero" },
+      h("div", { class: "eyebrow" }, "No results yet"),
+      h("h2", {}, L.recent_commits.length ? "Runs are filed, but none produced a result" : "Waiting for the first run"),
+      h("p", {}, L.recent_commits.length
+        ? "The node filed the runs below, and none of them has a successful measurement. Open a run to see where it stopped: the build log is kept when the build fails."
+        : "This page fills in when a benchmark node pushes its first run under runs/. Set up a node, check it, and run one tick by hand:"),
+      L.recent_commits.length ? null : h("pre", {}, "cp node/node.env.example node/node.env   # then edit it\nnode/check-node.sh                       # preflight\nGIT_PUSH=0 node/bench-node.sh            # one tick, kept local\nnode/install-units.sh --enable           # then let the timer run it"),
+      repo ? h("p", {}, h("a", { href: `${repo}#setting-up-a-node` }, "Setting up a node"), " · ", h("a", { href: `${repo}/blob/main/PORTING.md` }, "Porting this to another project")) : null),
+    L.recent_commits.length ? [h("h2", {}, "Runs"), commitsTable(L.recent_commits, L.notable)] : null,
+    footer());
+}
+
+// ---- suites -------------------------------------------------------------------------
+
+function renderSuites() {
+  const by = new Map();
+  for (const s of state.series) {
+    const e = by.get(s.suite) || { suite: s.suite, series: 0, cases: new Set(), nodes: new Set(), regressed: 0, improved: 0, failing: 0 };
+    e.series++; e.cases.add(`${s.case}|${s.params}`); e.nodes.add(s.node);
+    if (s.status && s.status !== "success") e.failing++;
+    else if (s.vs_prev != null && Math.abs(s.vs_prev) > state.landing.notable) {
+      const v = verdict(s.vs_prev, s.direction);
+      if (v === "regressed") e.regressed++; else if (v === "improved") e.improved++;
+    }
+    by.set(s.suite, e);
+  }
+  const rows = [...by.values()].sort((a, b) => b.failing - a.failing || b.regressed - a.regressed || a.suite.localeCompare(b.suite));
+  const pct = `${Math.round(state.landing.notable * 100)}%`;
+  return h("main", {},
+    h("nav", { class: "crumbs" }, h("a", { href: "#/" }, "overview"), " / suites"),
+    h("h2", {}, "Suites"),
+    h("p", { class: "lead" }, `${rows.length} benchmark binaries. Regressed and improved count series whose latest change exceeds ${pct}; failing counts series whose latest attempt did not succeed.`),
+    table(["suite", ">benchmarks", ">series", "nodes", ">failing", ">regressed", ">improved"], rows.map((e) => [
+      h("a", { href: `#/s/${encodeURIComponent(e.suite)}` }, e.suite), e.cases.size, e.series, [...e.nodes].sort().join(", "),
+      e.failing ? h("span", { class: "bad" }, e.failing) : "0",
+      e.regressed ? h("span", { class: "delta regressed" }, e.regressed) : "0", e.improved ? h("span", { class: "delta improved" }, e.improved) : "0"])),
+    footer());
+}
+
+async function loadHistory(suite) {
+  let hist = state.histories.get(suite);
+  if (!hist) { hist = await getJSON(`views/history/${encodeURIComponent(suite)}.json`); state.histories.set(suite, hist); }
+  return hist;
+}
+
+async function renderSuite(suite) {
+  const rows = state.series.filter((s) => s.suite === suite);
+  const nodes = [...new Set(rows.map((r) => r.node))].sort();
+  const hist = await loadHistory(suite);
+  const latestBy = new Map(rows.map((r) => [`${r.case}|${r.params}|${r.quantity}|${r.node}`, r]));
+  const groups = groupSeries(Object.values(hist.series).map((s) => ({ ...s, suite })), (g) => {
+    const mine = g.list.map((s) => latestBy.get(`${s.case}|${s.params}|${s.quantity}|${s.node}`)).filter(Boolean);
+    const newest = mine.filter((r) => r.estimate != null).sort((a, b) => b.commit_order - a.commit_order)[0];
+    const failing = mine.find((r) => r.status && r.status !== "success" && (!newest || r.node === newest.node));
+    return { newest, change: newest?.vs_prev ?? null, status: failing ? failing.status : "success", reason: failing?.reason };
+  }).sort((a, b) => a.case.localeCompare(b.case) || a.params.localeCompare(b.params));
+  const grid = h("div", { class: "grid" });
+  const status = h("span", { class: "note" });
+  const drawSuite = (needle = "") => {
+    destroyCharts();
+    grid.replaceChildren();
+    const shown = groups.filter((g) => !needle || caseLabel(g).toLowerCase().includes(needle));
+    const cards = shown.map((g) => { const [card, plot] = benchCard(g, { showSuite: false }); grid.append(card); return [g, plot]; });
+    status.textContent = `${shown.length} of ${groups.length} benchmarks`;
+    drawCards(grid, cards, () => hist.commits);
+  };
+  const filter = h("input", { type: "search", placeholder: "filter by name", "aria-label": "filter benchmarks", oninput: (e) => drawSuite(e.target.value.trim().toLowerCase()) });
+  const failing = groups.filter((g) => g.status !== "success").length;
+  const main = h("main", {},
+    h("nav", { class: "crumbs" }, h("a", { href: "#/" }, "overview"), " / ", h("a", { href: "#/suites" }, "suites"), " / ", suite),
+    h("h2", {}, suite),
+    h("p", { class: "lead" }, `${groups.length} benchmarks over ${hist.commits.length} measured commits`, failing ? [", ", h("span", { class: "bad" }, `${failing} failing`)] : null, `. The change compares each benchmark's newest measurement with the one before it.`),
+    h("div", { class: "filters" }, filter, status, sharedLegend(nodes)),
+    grid,
+    h("details", { class: "table-view" }, h("summary", {}, "Table view"),
+      table(["benchmark", "quantity", "node", "status", ">latest", ">vs previous", ">vs 10 back", ">noise", ">points"],
+        rows.map((s) => [h("a", { href: benchHref(s, { node: s.node }) }, caseLabel(s)), s.quantity, s.node,
+          s.status && s.status !== "success" ? failTag(s.reason, s.status) : "ok",
+          fmtValue(s.estimate, s.unit), delta(s.vs_prev, s.direction, { noise: s.noise, unit: s.unit }), delta(s.vs_10, s.direction, { unit: s.unit }), fmtAbsPct(s.noise), s.points]))),
+    footer());
+  drawSuite();
+  return main;
+}
+
+// ---- one benchmark ----------------------------------------------------------------
 
 async function renderBench(suite, kase, query) {
   const params = query.get("params") || "";
   const quantity = query.get("q") || "wall-time";
   const nodeFilter = query.get("node") || "all";
-  let hist = state.histories.get(suite);
-  if (!hist) { hist = await getJSON(`views/history/${encodeURIComponent(suite)}.json`); state.histories.set(suite, hist); }
+  const hist = await loadHistory(suite);
   const all = Object.values(hist.series).filter((s) => s.case === kase);
   const variants = [...new Set(all.map((s) => s.params))];
   const quantities = [...new Set(all.map((s) => s.quantity))];
   const nodes = [...new Set(all.map((s) => s.node))].sort();
   const shown = all.filter((s) => s.params === params && s.quantity === quantity && (nodeFilter === "all" || s.node === nodeFilter));
   const latestRows = state.series.filter((s) => s.suite === suite && s.case === kase && s.params === params && s.quantity === quantity && (nodeFilter === "all" || s.node === nodeFilter));
-  const kpiNode = latestRows.sort((a, b) => b.commit_order - a.commit_order)[0];
-  const unit = shown[0]?.unit || kpiNode?.unit || "";
-  const direction = shown[0]?.direction || kpiNode?.direction || "";
+  const kpi = latestRows.filter((r) => r.estimate != null).sort((a, b) => b.commit_order - a.commit_order)[0];
+  const failing = latestRows.filter((r) => r.status && r.status !== "success");
+  const unit = shown[0]?.unit || kpi?.unit || "";
+  const direction = shown[0]?.direction || kpi?.direction || "";
+  const opts = { unit };
 
   const setParam = (k, v) => { const q = new URLSearchParams(query); if (v == null || v === "" || v === "all" || (k === "q" && v === "wall-time")) q.delete(k); else q.set(k, v); location.hash = `#/b/${encodeURIComponent(suite)}/${encodeURIComponent(kase)}${q.toString() ? "?" + q : ""}`; };
   const select = (label, key, values, current, fmt = (x) => x) => h("label", {}, label, h("select", { onchange: (e) => setParam(key, e.target.value) }, values.map((v) => h("option", { value: v, selected: v === current }, fmt(v)))));
+  const few = kpi && kpi.points < 3;
+  const lastNs = shown.flatMap((x) => x.ns.filter((n, k) => x.estimates[k] != null));
+  const reps = lastNs.length ? lastNs[lastNs.length - 1] : null;
 
   const main = h("main", {},
-    h("div", { class: "crumbs" }, h("a", { href: "#/" }, "home"), " / ", h("a", { href: `#/s/${encodeURIComponent(suite)}` }, suite)),
-    h("h2", { class: "mono" }, kase, params ? ` ${params}` : ""),
+    h("nav", { class: "crumbs" }, h("a", { href: "#/" }, "overview"), " / ", h("a", { href: `#/s/${encodeURIComponent(suite)}` }, suite)),
+    h("h2", { class: "mono title" }, kase, params ? ` ${params}` : ""),
+    h("p", { class: "lead" }, `${quantity}, ${direction ? direction.replace(/-/g, " ") : "direction unknown"}`, kpi ? ` · ${kpi.node}` : ""),
     h("div", { class: "filters" },
       variants.length > 1 ? select("variant", "params", variants, params, (v) => v || "(default)") : null,
       quantities.length > 1 ? select("quantity", "q", quantities, quantity) : null,
       nodes.length > 1 ? select("node", "node", ["all", ...nodes], nodeFilter) : null),
-    kpiNode ? h("div", { class: "tiles" },
-      tile(`latest · ${kpiNode.node}`, fmtValue(kpiNode.estimate, unit), `${kpiNode.quantity}, commit ${kpiNode.sha.slice(0, 12)}`),
-      tile("vs previous", delta(kpiNode.vs_prev, direction)),
-      tile("vs 10 commits back", delta(kpiNode.vs_10, direction)),
-      tile("vs 100 commits back", delta(kpiNode.vs_100, direction)),
-      tile("noise", fmtAbsPct(kpiNode.noise), kpiNode.noise_rank != null && kpiNode.points >= 3 ? `quieter than ${Math.round((1 - kpiNode.noise_rank) * 100)}% of the suite` : "needs 3+ points"),
-      tile("points", kpiNode.points, kpiNode.first_order != null ? `since measured commit #${kpiNode.first_order}` : null)) : h("p", { class: "empty" }, "no successful measurement yet"),
+    failing.map((f) => h("div", { class: "banner bad" }, `The latest attempt on ${f.node} (commit `, h("a", { href: `#/c/${f.attempt_sha}`, class: "mono" }, f.attempt_sha.slice(0, 12)), ") failed: ",
+      h("code", {}, f.reason || f.status), f.points ? ". The values below are from the last successful measurement." : ". It has never succeeded.")),
+    kpi ? h("div", { class: "tiles" },
+      tile(`latest · ${kpi.node}`, fmtValue(kpi.estimate, unit), h("span", {}, "commit ", h("a", { href: `#/c/${kpi.sha}`, class: "mono" }, kpi.sha.slice(0, 12)))),
+      tile("vs previous measurement", delta(kpi.vs_prev, direction, { ...opts, noise: kpi.noise })),
+      tile("vs 10 measurements back", delta(kpi.vs_10, direction, opts), kpi.points <= 10 ? `needs 11+, has ${kpi.points}` : null),
+      tile("vs 100 measurements back", delta(kpi.vs_100, direction, opts), kpi.points <= 100 ? `needs 101+, has ${kpi.points}` : null),
+      tile("noise", few ? "–" : fmtAbsPct(kpi.noise), few ? "needs 3+ measurements" : kpi.noise_rank != null ? `quieter than ${Math.round((1 - kpi.noise_rank) * 100)}% of the suite` : null),
+      tile("measured commits", kpi.points, reps != null ? `${reps} repetition${reps === 1 ? "" : "s"} each, median shown` : null)) : failing.length ? null : h("p", { class: "empty" }, "no successful measurement yet"),
+    few ? h("p", { class: "note" }, `With ${kpi.points} measurement${kpi.points > 1 ? "s" : ""} there is no noise estimate yet, so a change here cannot be told apart from run-to-run variation.`) : null,
     h("h3", {}, "History"),
-    h("p", { class: "note" }, "One point per measured commit, in commit order. Hover for the commit. ", direction ? `${direction.replace(/-/g, " ")}.` : ""));
+    h("p", { class: "note" }, "One point per measured commit, in commit order. Hover for details, click a point to open its commit, drag to zoom, double-click to reset. Failed attempts are marked under the axis."));
   const chartWrap = h("div", { class: "chart-wrap" });
   main.append(chartWrap);
   const moves = biggestMoves(shown, hist.commits);
   main.append(h("h3", {}, "Biggest moves in this series"),
-    table(["commit", "subject", "node", ">from", ">to", ">change"], moves.slice(0, 12).map((m) => [
+    table(["commit", "subject", "node", "baseline", ">from", ">to", ">change"], moves.slice(0, 12).map((m) => [
       h("a", { href: `#/c/${m.sha}`, class: "mono" }, m.short), m.subject.length > 70 ? m.subject.slice(0, 68) + "…" : m.subject, m.node,
-      fmtValue(m.from, unit), fmtValue(m.to, unit), delta(m.rel, direction)]), { empty: "needs two points" }),
+      h("span", {}, h("a", { href: `#/c/${m.baseSha}`, class: "mono" }, m.baseSha.slice(0, 7)),
+        m.skipped > 0 ? h("span", { class: "tag gap", title: `${m.skipped} measured commit${m.skipped > 1 ? "s" : ""} in between had no successful result for this series, so this change spans ${m.skipped > 1 ? "them" : "it"}` }, `spans ${m.skipped + 1}`) : null),
+      fmtValue(m.from, unit), fmtValue(m.to, unit), delta(m.rel, direction, { ...opts, noise: kpi?.noise })]), { empty: "needs two successful measurements" }),
     footer());
   requestAnimationFrame(() => drawHistory(chartWrap, shown, hist.commits, unit, kase));
   return main;
@@ -316,13 +515,21 @@ async function renderBench(suite, kase, query) {
 
 function biggestMoves(seriesList, axis) {
   const bySha = new Map(axis.map((c) => [c.commit_order, c]));
+  const position = new Map(axis.map((c, i) => [c.commit_order, i]));
   const out = [];
   for (const s of seriesList) {
-    for (let i = 1; i < s.orders.length; i++) {
-      const a = s.estimates[i - 1], b = s.estimates[i];
-      if (a == null || b == null || !(a > 0)) continue;
-      const c = bySha.get(s.orders[i]);
-      out.push({ sha: c?.sha || "", short: c?.short || "", subject: c?.subject || "", node: s.node, from: a, to: b, rel: b / a - 1 });
+    let prev = null, prevOrder = null;
+    for (let i = 0; i < s.orders.length; i++) {
+      const b = s.estimates[i];
+      if (b == null) continue;
+      if (prev != null && prev > 0) {
+        const c = bySha.get(s.orders[i]);
+        const base = bySha.get(prevOrder);
+        // skipped: the suite's measured commits between the baseline and this one
+        out.push({ sha: c?.sha || "", short: c?.short || "", subject: c?.subject || "", node: s.node, from: prev, to: b, rel: b / prev - 1,
+          baseSha: base?.sha || "", skipped: position.get(s.orders[i]) - position.get(prevOrder) - 1 });
+      }
+      prev = b; prevOrder = s.orders[i];
     }
   }
   return out.sort((x, y) => Math.abs(y.rel) - Math.abs(x.rel));
@@ -330,26 +537,40 @@ function biggestMoves(seriesList, axis) {
 
 function drawHistory(wrap, seriesList, axis, unit, title) {
   wrap.replaceChildren();
-  if (state.chart) { state.chart.destroy(); state.chart = null; }
   if (!seriesList.length || !axis.length) { wrap.append(h("div", { class: "empty" }, "no points to draw")); return; }
   const index = new Map(axis.map((c, i) => [c.commit_order, i]));
   const xs = axis.map((_, i) => i);
   const allValues = seriesList.flatMap((s) => s.estimates);
   const scale = pickScale(allValues, unit);
   const ys = seriesList.map((s) => { const col = new Array(xs.length).fill(null); s.orders.forEach((o, k) => { if (s.estimates[k] != null) col[index.get(o)] = s.estimates[k] / scale[1]; }); return col; });
+  const fails = seriesList.map((s) => { const col = new Array(xs.length).fill(null); s.orders.forEach((o, k) => { if (s.statuses[k] && s.statuses[k] !== "success") col[index.get(o)] = s.reasons?.[k] || s.statuses[k]; }); return col; });
+  const spread = seriesList.map((s) => { const col = new Array(xs.length).fill(null); s.orders.forEach((o, k) => { if (s.estimates[k] != null) col[index.get(o)] = { n: s.ns?.[k], min: s.mins?.[k], max: s.maxs?.[k] }; }); return col; });
+  const nFailed = fails.flat().filter(Boolean).length;
   const totalPoints = allValues.filter((v) => v != null).length;
+  if (!totalPoints) {
+    wrap.append(h("div", { class: "empty" }, `No successful measurement to draw: ${nFailed} failed attempt${nFailed === 1 ? "" : "s"} over ${axis.length} commits. The table below has the reason for each.`),
+      h("details", { class: "table-view", open: true }, h("summary", {}, "Table view"),
+        table(["commit", "date", ...seriesList.map((s) => `${s.node}`)], axis.map((c, i) => [h("a", { href: `#/c/${c.sha}`, class: "mono" }, c.short), fmtDate(c.date), ...fails.map((col) => (col[i] ? failTag(col[i], col[i]) : "–"))]))));
+    return;
+  }
   const tip = h("div", { class: "tip" });
-  const titleRow = h("div", { class: "chart-title" }, h("span", {}, `${title} · ${scale[0]}`), h("span", { class: "note" }, `${axis.length} commits`));
+  const titleRow = h("div", { class: "chart-title" }, h("span", {}, `${title} · ${scale[0]}`), h("span", { class: "note" }, `${axis.length} commits`, nFailed ? [" · ", h("span", { class: "bad" }, `${nFailed} failed`)] : null));
   const el = h("div", { class: "chart" });
   wrap.append(titleRow, el, tip);
-  const width = Math.max(320, wrap.clientWidth - 16);
+  const size = () => ({ width: Math.max(240, wrap.clientWidth - 16), height: window.innerWidth < 600 ? 220 : 300 });
+  const failMarks = (u) => {  // a small mark under the plot at every failed attempt
+    const ctx = u.ctx, y = u.bbox.top + u.bbox.height + 3 * devicePixelRatio;
+    ctx.save(); ctx.fillStyle = cssVar("--critical");
+    fails.forEach((col) => col.forEach((f, i) => { if (!f) return; const x = u.valToPos(i, "x", true); ctx.fillRect(x - 3 * devicePixelRatio, y, 6 * devicePixelRatio, 3 * devicePixelRatio); }));
+    ctx.restore();
+  };
   const opts = {
-    width, height: 300,
+    ...size(),
     legend: { show: seriesList.length > 1, live: false },
     cursor: { points: { size: 10 }, drag: { x: true, y: false } },
     scales: { x: { time: false, range: [-0.5, xs.length - 0.5] }, y: { range: (u, min, max) => { const pad = (max - min) * 0.25 || max * 0.1 || 1; return [Math.max(0, min - pad), max + pad]; } } },
     axes: [
-      { stroke: cssVar("--muted"), grid: { show: false }, ticks: { stroke: cssVar("--axis"), width: 1 }, font: "12px system-ui, sans-serif", space: 70,
+      { stroke: cssVar("--muted"), grid: { show: false }, ticks: { stroke: cssVar("--axis"), width: 1 }, font: "12px system-ui, sans-serif", space: 70, gap: 8,
         splits: (u, axisIdx, min, max, incr) => { const step = Math.max(1, Math.ceil(incr)); const out = []; for (let i = Math.max(0, Math.ceil(min)); i <= Math.min(xs.length - 1, Math.floor(max)); i += step) out.push(i); return out; },
         values: (u, vals) => vals.map((v) => axis[v] ? axis[v].short.slice(0, 7) : "") },
       { stroke: cssVar("--muted"), grid: { stroke: cssVar("--grid"), width: 1 }, ticks: { show: false }, font: "12px system-ui, sans-serif", size: 60,
@@ -360,95 +581,132 @@ function drawHistory(wrap, seriesList, axis, unit, title) {
       points: { show: totalPoints <= 80, size: 8, stroke: nodeColor(s.node), fill: cssVar("--surface"), width: 2 },
     }))],
     hooks: {
+      draw: [failMarks],
       setCursor: [(u) => {
         const i = u.cursor.idx;
         if (i == null || !axis[i]) { tip.style.display = "none"; return; }
         const c = axis[i];
         const rows = seriesList.map((s, k) => {
           const v = ys[k][i];
-          const prevIdx = ys[k].slice(0, i).map((val, j) => (val != null ? j : -1)).filter((j) => j >= 0).pop();
-          const rel = v != null && prevIdx != null && ys[k][prevIdx] > 0 ? v / ys[k][prevIdx] - 1 : null;
+          let prev = null;
+          for (let j = i - 1; j >= 0; j--) if (ys[k][j] != null) { prev = ys[k][j]; break; }
+          const rel = v != null && prev > 0 ? v / prev - 1 : null;
           return h("div", { class: "row" }, h("span", { class: "key", style: `border-color:${nodeColor(s.node)}` }),
-            h("span", { class: "v num" }, v == null ? "not measured" : `${fmtNum(v)} ${scale[0]}`),
-            h("span", { class: "s num" }, rel == null ? "" : fmtPct(rel)), seriesList.length > 1 ? h("span", { class: "s" }, s.node) : null);
+            h("span", { class: "v num" }, v != null ? `${fmtNum(v)} ${scale[0]}` : fails[k][i] ? h("span", { class: "bad" }, `failed: ${fails[k][i]}`) : "not measured"),
+            h("span", { class: "s num" }, rel == null ? "" : fmtPct(rel)), seriesList.length > 1 ? h("span", { class: "s" }, s.node) : null,
+            spread[k][i] ? h("span", { class: "s spread" }, spread[k][i].n > 1
+              ? `median of ${spread[k][i].n}, range ${fmtNum(spread[k][i].min / scale[1])}–${fmtNum(spread[k][i].max / scale[1])}`
+              : "1 repetition: no spread") : null);
         });
         tip.replaceChildren(h("div", { class: "when" }, `${c.short} · ${fmtDate(c.date)}`), ...rows, h("div", { class: "subj" }, c.subject));
         tip.style.display = "block";
         const left = u.cursor.left, bbox = u.over.getBoundingClientRect(), wrapBox = wrap.getBoundingClientRect();
         const x = bbox.left - wrapBox.left + left + 14, maxX = wrap.clientWidth - tip.offsetWidth - 8;
-        tip.style.left = `${Math.min(x, maxX)}px`;
+        tip.style.left = `${Math.max(8, Math.min(x, maxX))}px`;
         tip.style.top = `${bbox.top - wrapBox.top + 10}px`;
       }],
     },
   };
-  state.chart = new uPlot(opts, [xs, ...ys], el);
+  const chart = new uPlot(opts, [xs, ...ys], el);
+  state.charts.push(chart);
   el.addEventListener("mouseleave", () => { tip.style.display = "none"; });
-  el.addEventListener("click", () => { const i = state.chart.cursor.idx; if (i != null && axis[i]) location.hash = `#/c/${axis[i].sha}`; });
+  el.addEventListener("click", () => { const i = chart.cursor.idx; if (i != null && axis[i] && chart.select.width === 0) location.hash = `#/c/${axis[i].sha}`; });
   const details = h("details", { class: "table-view" }, h("summary", {}, "Table view"),
-    table(["commit", "date", ...seriesList.map((s) => `>${s.node} (${scale[0]})`)], axis.map((c, i) => [h("a", { href: `#/c/${c.sha}`, class: "mono" }, c.short), fmtDate(c.date), ...ys.map((col) => (col[i] == null ? "–" : fmtNum(col[i])))])));
+    table(["commit", "date", ...seriesList.map((s) => `>${s.node} (${scale[0]})`)], axis.map((c, i) => [h("a", { href: `#/c/${c.sha}`, class: "mono" }, c.short), fmtDate(c.date),
+      ...ys.map((col, k) => (col[i] != null ? fmtNum(col[i]) : fails[k][i] ? failTag(fails[k][i]) : "–"))])));
   wrap.append(details);
-  const onResize = () => { if (state.chart) state.chart.setSize({ width: Math.max(320, wrap.clientWidth - 16), height: 300 }); };
-  window.addEventListener("resize", onResize, { once: false });
+  const onResize = () => chart.setSize(size());
+  window.addEventListener("resize", onResize);
+  state.cleanup.push(() => window.removeEventListener("resize", onResize));
 }
+
+// ---- one commit ---------------------------------------------------------------------
 
 async function renderCommit(sha) {
   let c = state.commits.get(sha);
   if (!c) { c = await getJSON(`views/commits/${sha}.json`); state.commits.set(sha, c); }
   const filter = h("input", { type: "search", placeholder: "filter benchmarks", "aria-label": "filter benchmarks" });
   const minPct = h("select", {}, [0, 1, 2, 5, 10].map((p) => h("option", { value: p, selected: p === 0 }, p ? `≥ ${p}%` : "all changes")));
+  const hideNoise = h("input", { type: "checkbox" });
   const body = h("div", {});
   const draw = () => {
     const needle = filter.value.trim().toLowerCase(), min = Number(minPct.value) / 100;
-    const rows = c.changes.filter((ch) => Math.abs(ch.rel_change) >= min && (!needle || `${ch.suite} ${ch.case} ${ch.params} ${ch.node}`.toLowerCase().includes(needle)));
-    body.replaceChildren(table(["benchmark", "suite", "node", ">before", ">after", ">change", ">noise", ""], rows.map((ch) => [
-      h("a", { href: benchHref({ ...ch }) }, caseLabel(ch)), ch.suite, ch.node, fmtValue(ch.prev_estimate, ch.unit), fmtValue(ch.estimate, ch.unit),
-      delta(ch.rel_change, ch.direction), fmtAbsPct(ch.noise), gapTag(ch)]), { empty: "no changes match" }),
+    const rows = c.changes.filter((ch) => Math.abs(ch.rel_change) >= min && !(hideNoise.checked && withinNoise(ch.rel_change, ch.noise))
+      && (!needle || `${ch.suite} ${ch.case} ${ch.params} ${ch.node}`.toLowerCase().includes(needle)));
+    body.replaceChildren(table(["benchmark", "suite", "node", ">baseline", ">before", ">after", ">change", ">noise"], rows.map((ch) => [
+      h("a", { href: benchHref(ch, { node: ch.node }) }, caseLabel(ch)), shortSuite(ch.suite), ch.node,
+      h("span", {}, gapTag(ch), " ", h("a", { href: `#/c/${ch.prev_sha}`, class: "mono" }, ch.prev_sha.slice(0, 7))),
+      fmtValue(ch.prev_estimate, ch.unit), fmtValue(ch.estimate, ch.unit),
+      delta(ch.rel_change, ch.direction, { noise: ch.noise, unit: ch.unit }), fmtAbsPct(ch.noise)]), { empty: "no changes match" }),
       h("p", { class: "note" }, `${rows.length} of ${c.changes.length} compared series`));
   };
-  filter.addEventListener("input", draw); minPct.addEventListener("change", draw);
+  filter.addEventListener("input", draw); minPct.addEventListener("change", draw); hideNoise.addEventListener("change", draw);
+  const parentMeasured = c.changes.some((ch) => ch.prev_is_parent);
   const main = h("main", {},
-    h("div", { class: "crumbs" }, h("a", { href: "#/" }, "home"), " / commit"),
+    h("nav", { class: "crumbs" }, h("a", { href: "#/" }, "overview"), " / commit"),
     h("h2", {}, h("span", { class: "mono" }, c.short), " ", c.subject),
-    h("p", { class: "lead" }, fmtDate(c.committer_date), " · ", h("a", { href: GITHUB + c.sha, target: "_blank", rel: "noopener" }, "on GitHub"),
+    h("p", { class: "lead" }, fmtDate(c.committer_date), " · ", h("a", { href: upstreamCommit(c.sha), target: "_blank", rel: "noopener" }, "upstream commit"),
       c.parent ? h("span", {}, " · parent ", h("a", { href: `#/c/${c.parent}`, class: "mono" }, c.parent.slice(0, 12))) : null),
-    table(["node", "state", "reason", "started", "finished", ">suites ok", ">failed", ">results"], c.nodes.map((n) => [n.node, n.state, n.reason || "", fmtDate(n.started_at), fmtDate(n.finished_at), n.suites_ok, n.suites_failed || "0", n.results])),
+    h("h3", {}, "Runs"),
+    table(["node", "state", "reason", "started", "finished", ">suites ok", ">failed suites", ">results", ">failed results", ""], c.nodes.map((n) => [
+      n.node, n.state === "finished" ? n.state : h("span", { class: "bad" }, n.state), n.reason || "", fmtDate(n.started_at), fmtDate(n.finished_at),
+      n.suites_ok, n.suites_failed ? h("span", { class: "bad" }, n.suites_failed) : "0", n.results,
+      n.failed_results ? h("span", { class: "bad" }, n.failed_results) : "0",
+      runDocs(c.sha, n.node) ? h("span", {}, h("a", { href: runDocs(c.sha, n.node), target: "_blank", rel: "noopener" }, "documents"), " · ", h("a", { href: runDocs(c.sha, n.node, "log.txt"), target: "_blank", rel: "noopener" }, "log")) : ""])),
+    c.failures?.length ? [h("h3", {}, h("span", { class: "bad" }, `Failed results (${c.failures.length})`)),
+      table(["benchmark", "suite", "node", "quantity", "reason"], c.failures.map((f) => [h("a", { href: benchHref(f, { node: f.node }) }, caseLabel(f)), shortSuite(f.suite), f.node, f.quantity, h("code", {}, f.reason || f.status)]))] : null,
     h("h3", {}, "Changes against the previous measured point"),
-    h("div", { class: "filters" }, h("label", {}, "show", minPct), filter),
+    h("p", { class: "note" }, parentMeasured || !c.changes.length
+      ? "Each series is compared with its own previous successful measurement, named in the baseline column. \"not parent\" marks a baseline further back than the parent commit."
+      : "This commit's parent was not measured, so every change here also covers the unmeasured commits in between. Queue the parent to narrow them down."),
+    h("div", { class: "filters" }, h("label", {}, "show", minPct), h("label", {}, hideNoise, "hide changes within noise"), filter),
     body, footer());
   draw();
   return main;
 }
 
-function renderSuites() {
-  const by = new Map();
-  for (const s of state.series) {
-    const e = by.get(s.suite) || { suite: s.suite, series: 0, cases: new Set(), nodes: new Set(), regressed: 0, improved: 0, latest: 0 };
-    e.series++; e.cases.add(`${s.case}|${s.params}`); e.nodes.add(s.node);
-    const v = verdict(s.vs_prev, s.direction, state.landing.notable);
-    if (v === "regressed") e.regressed++; else if (v === "improved") e.improved++;
-    e.latest = Math.max(e.latest, s.commit_order);
-    by.set(s.suite, e);
-  }
-  const rows = [...by.values()].sort((a, b) => b.regressed - a.regressed || a.suite.localeCompare(b.suite));
-  return h("main", {},
-    h("div", { class: "crumbs" }, h("a", { href: "#/" }, "home"), " / suites"),
-    h("h2", {}, "Suites"),
-    h("p", { class: "lead" }, `${rows.length} benchmark binaries. Counts are series whose latest change exceeds ${state.landing.notable * 100}% against their previous point.`),
-    table(["suite", ">benchmarks", ">series", "nodes", `>regressed`, `>improved`], rows.map((e) => [
-      h("a", { href: `#/s/${encodeURIComponent(e.suite)}` }, e.suite), e.cases.size, e.series, [...e.nodes].sort().join(", "),
-      e.regressed ? h("span", { class: "delta regressed" }, e.regressed) : "0", e.improved ? h("span", { class: "delta improved" }, e.improved) : "0"])),
+// ---- about: how to read the page, and how to get one for your own project ------------
+
+function renderAbout() {
+  const P = state.project, repo = P.repository, pct = `${Math.round(state.landing.notable * 100)}%`;
+  const upstream = (P.upstream?.url || "").replace(/\.git$/, "");
+  return h("main", { class: "prose" },
+    h("nav", { class: "crumbs" }, h("a", { href: "#/" }, "overview"), " / about"),
+    h("h2", {}, "About this page"),
+    h("p", { class: "lead" }, P.description || "", " The measuring happens on a dedicated machine; this page is built from the documents it pushes."),
+    h("div", { class: "cols" },
+      h("section", { class: "card" }, h("h3", {}, "How a commit gets measured"),
+        h("ol", {},
+          h("li", {}, "A timer on the benchmark node picks the newest commit on ", h("a", { href: upstream }, `${upstream.replace(/^https:\/\/github.com\//, "")} ${P.upstream?.branch || ""}`), " it has not measured (or a requested one from ", h("code", {}, "queue/"), ")."),
+          h("li", {}, "It builds that commit, runs every benchmark binary through benchx, and pushes the result documents to ", h("code", {}, "runs/<sha>/<node>/"), "."),
+          h("li", {}, "A GitHub Actions job turns the documents into small tables and the JSON this page reads. Nothing here is stored anywhere else."))),
+      h("section", { class: "card" }, h("div", { class: "about-brand" }, wordmark()), h("h3", {}, "Benchmark your own project this way"),
+        h("p", {}, "This repository is meant to be copied. Keep the node, the derived tables and this page; replace the build (the provider) and the benchmark discovery; set your project in ", h("code", {}, "project.json"), "."),
+        h("p", {}, repo ? [h("a", { class: "button", href: `${repo}/blob/main/PORTING.md` }, "Porting guide →"), " ", h("a", { href: repo }, "repository")] : null))),
+    h("h3", {}, "Reading the numbers"),
+    h("dl", {},
+      h("dt", {}, "Change"), h("dd", {}, "A benchmark's newest successful measurement divided by its previous successful one, minus one. ", delta(0.12, "lower-is-better", { unit: "s", noise: 0.01 }), " is worse, ", delta(-0.12, "lower-is-better", { unit: "s", noise: 0.01 }), " is better; for higher-is-better quantities such as throughput the colors flip. The arrow is the direction of the number; the color is good or bad. Under 0.5% is shown as flat (", delta(0.001, "lower-is-better"), ")."),
+      h("dt", {}, "Noise"), h("dd", {}, "The series' usual commit-to-commit movement: the median change between consecutive measurements over its last 21. It is historical variability across commits, not repeatability at one commit, and it is the series' current value, also on older commit pages. It needs three measurements. A change smaller than twice the noise is drawn muted (", delta(0.03, "lower-is-better", { unit: "s", noise: 0.02 }), "), because changes that size are common for this series. A change with no noise estimate yet is underlined (", delta(0.12, "lower-is-better", { unit: "s", noise: null }), "): unconfirmed."),
+      h("dt", {}, "Measured commits and repetitions"), h("dd", {}, "Each point is the median of the repetitions benchx ran on that commit. The history chart's tooltip shows how many there were and their range. With one repetition there is no spread to judge a point by."),
+      h("dt", {}, "Not a verdict"), h("dd", {}, "None of this is a statistical test yet. benchx's comparator history mode will compare each commit with its ancestors using the measured repetitions; until then, treat a change as a lead to check, and re-measure it (", h("code", {}, "queue/"), ") before acting on it."),
+      h("dt", {}, "Baseline and \"not parent\""), h("dd", {}, "A change is against the previous measurement of the same series, which is the parent commit only if the parent was measured. Otherwise the change spans every unmeasured commit in between, and the commit page marks it ", h("span", { class: "tag gap" }, "not parent"), "."),
+      h("dt", {}, "Counts"), h("dd", {}, `"Regressed" and "improved" in the summaries count changes larger than ${pct} in either direction, whatever the noise.`),
+      h("dt", {}, "Failures"), h("dd", {}, "A benchmark whose latest attempt failed is marked on its card and listed under the latest run, with the reason benchx recorded. Its chart keeps the last successful values, and failed attempts are marked under the history chart's axis.")),
     footer());
 }
 
 function footer() {
-  const m = state.manifest;
-  return h("footer", {}, `built ${m.built_at} · ${m.counts.points} results · tables: `, h("a", { href: `${DATA}points.parquet` }, "points.parquet"), ", ", h("a", { href: `${DATA}latest.parquet` }, "latest.parquet"), ", ", h("a", { href: `${DATA}changes.parquet` }, "changes.parquet"), ", ", h("a", { href: `${DATA}commits.parquet` }, "commits.parquet"), " · ", h("a", { href: "https://github.com/rok/benchx-arrow" }, "benchx-arrow"));
+  const m = state.manifest, repo = state.project.repository;
+  const t = (name) => h("a", { href: `${DATA}${name}.parquet`, download: true }, name);
+  return h("footer", {},
+    h("span", {}, `built ${fmtDate(m.built_at)} · ${m.counts.points.toLocaleString()} results · data: `, t("points"), ", ", t("latest"), ", ", t("changes"), ", ", t("commits"), " (Parquet)"),
+    h("span", { class: "made" }, "measured with ", h("a", { href: "https://github.com/benchx-dev/benchx", title: "benchx" }, wordmark(true)), repo ? [" · ", h("a", { href: repo }, "source"), " · ", h("a", { href: `${repo}/blob/main/PORTING.md` }, "use this for your project")] : null));
 }
 
 // ---- shell: header, search, theme, router -------------------------------------------
 
 function header() {
-  const input = h("input", { type: "search", placeholder: "search a benchmark…", "aria-label": "search a benchmark", autocomplete: "off" });
+  const input = h("input", { type: "search", placeholder: "search a benchmark…  ( / )", "aria-label": "search a benchmark", autocomplete: "off" });
   const list = h("ul", { role: "listbox", hidden: true });
   let items = [], active = -1;
   const show = () => {
@@ -472,15 +730,18 @@ function header() {
     if (list.hidden) return;
     if (e.key === "ArrowDown") { active = Math.min(active + 1, items.length - 1); e.preventDefault(); }
     else if (e.key === "ArrowUp") { active = Math.max(active - 1, 0); e.preventDefault(); }
-    else if (e.key === "Enter" && active >= 0) { go(items[active]); return; }
+    else if (e.key === "Enter") { if (items.length) go(items[Math.max(active, 0)]); return; }
     else if (e.key === "Escape") { list.hidden = true; return; }
     [...list.children].forEach((li, i) => li.setAttribute("aria-selected", i === active));
   });
   document.addEventListener("click", (e) => { if (!list.contains(e.target) && e.target !== input) list.hidden = true; });
-  const theme = h("button", { class: "ghost", title: "theme: auto / dark / light", onclick: () => { const cur = document.documentElement.dataset.theme || "auto"; const next = cur === "auto" ? "dark" : cur === "dark" ? "light" : "auto"; applyTheme(next); route(); } }, "theme");
+  document.addEventListener("keydown", (e) => { if (e.key === "/" && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName)) { e.preventDefault(); input.focus(); } });
+  const label = () => `theme: ${document.documentElement.dataset.theme || "auto"}`;
+  const theme = h("button", { class: "ghost", title: "cycle theme: auto / dark / light", onclick: (e) => { const cur = document.documentElement.dataset.theme || "auto"; applyTheme(cur === "auto" ? "dark" : cur === "dark" ? "light" : "auto"); e.currentTarget.textContent = label(); route(); } }, label());
+  const nav = (href, text) => h("a", { href, "data-nav": href }, text);
   return h("header", { class: "top" },
-    h("h1", {}, h("a", { href: "#/" }, "Arrow benchmarks"), " ", h("span", { class: "sub" }, "benchx")),
-    h("nav", {}, h("a", { href: "#/" }, "overview"), h("a", { href: "#/suites" }, "suites")),
+    h("h1", {}, h("a", { href: "#/", class: "brand" }, h("span", { html: MARK }), state.project.title || "Benchmarks")),
+    h("nav", {}, nav("#/", "overview"), nav("#/suites", "suites"), nav("#/about", "about")),
     h("div", { class: "search" }, input, list), theme);
 }
 
@@ -489,15 +750,26 @@ function applyTheme(mode) {
   try { if (mode === "auto") localStorage.removeItem("theme"); else localStorage.setItem("theme", mode); } catch (e) { /* storage unavailable */ }
 }
 
+function destroyCharts() {
+  for (const c of state.charts) c.destroy();
+  state.charts = [];
+}
+
 async function route() {
   const root = document.getElementById("app");
   const hash = location.hash || "#/";
   const [path, qs] = hash.slice(1).split("?");
   const query = new URLSearchParams(qs || "");
   const parts = path.split("/").filter(Boolean).map(decodeURIComponent);
+  destroyCharts();
+  for (const f of state.cleanup) f();
+  state.cleanup = [];
+  const section = parts[0] === "suites" || parts[0] === "s" ? "#/suites" : parts[0] === "about" ? "#/about" : parts[0] ? null : "#/";
+  document.querySelectorAll("[data-nav]").forEach((a) => a.toggleAttribute("aria-current", a.dataset.nav === section));
   let view;
   try {
     if (parts[0] === "suites") view = renderSuites();
+    else if (parts[0] === "about") view = renderAbout();
     else if (parts[0] === "s" && parts[1]) view = await renderSuite(parts[1]);
     else if (parts[0] === "b" && parts[2]) view = await renderBench(parts[1], parts.slice(2).join("/"), query);  // a case name may itself contain '/'
     else if (parts[0] === "c" && parts[1]) view = await renderCommit(parts[1]);
@@ -515,11 +787,16 @@ async function init() {
   try {
     state.manifest = await getJSON("manifest.json", { fresh: true });
     state.v = state.manifest.built_at;
-    [state.landing, state.series] = await Promise.all([getJSON("views/landing.json"), getJSON("views/series.json")]);
+    [state.project, state.landing, state.series] = await Promise.all([
+      getJSON("project.json").catch(() => ({})), getJSON("views/landing.json"), getJSON("views/series.json")]);
   } catch (e) {
-    root.replaceChildren(h("main", {}, h("h2", {}, "No data yet"), h("p", { class: "note" }, String(e.message || e))));
+    root.replaceChildren(h("main", {}, h("section", { class: "hero" }, h("div", { class: "eyebrow" }, "No data"),
+      h("h2", {}, "This page has not been built yet"),
+      h("p", {}, "Run ", h("code", {}, "tools/build-site.sh"), " to derive site/data from runs/, then serve site/ (", h("code", {}, "python3 -m http.server -d site"), ")."),
+      h("p", { class: "note" }, String(e.message || e)))));
     return;
   }
+  if (state.project.title) document.title = state.project.title;
   document.body.prepend(header());
   window.addEventListener("hashchange", route);
   await route();

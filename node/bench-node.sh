@@ -4,17 +4,22 @@
 # when nothing is pending or another tick holds the lock.
 #
 # Which commit: the first entry in queue/ this node has not measured, else the
-# newest commit on apache/arrow main (first-parent, LOOKBACK deep) it has not
-# measured. Nothing else decides what runs; the repository is the state.
+# newest commit on the upstream branch (project.json; first-parent, LOOKBACK
+# deep) it has not measured. Nothing else decides what runs; the repository is
+# the state. A run directory left behind by an interrupted tick (state still
+# "running") does not count as measured: the next tick clears it and retries.
+#
+# Coverage: each tick takes the newest unmeasured commit, so a node faster than
+# the branch measures every commit and a slower one skips some; queue/ backfills.
 set -euo pipefail
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT=$(cd "$HERE/.." && pwd)
+# node.env holds this node's defaults; a variable set on the command line
+# (GIT_PUSH=0 node/bench-node.sh) wins over it.
+OVERRIDES=$(for v in NODE_NAME BX SUITE_FILTER LOOKBACK REPETITIONS CASE_TIMEOUT BUILD_JOBS GIT_PUSH; do [[ -v $v ]] && printf '%s=%q\n' "$v" "${!v}"; done)
 [[ -f $HERE/node.env ]] && source "$HERE/node.env"
+eval "$OVERRIDES"
 NODE_NAME=${NODE_NAME:-$(hostname -s)}
-WORK=${BENCHX_ARROW_WORK:-$HOME/.benchx-arrow}
-BX=${BX:-$WORK/venv/bin/bx}
-ARROW_URL=${ARROW_URL:-https://github.com/apache/arrow.git}
-ARROW_REFERENCE=${ARROW_REFERENCE:-}
 SUITE_FILTER=${SUITE_FILTER:-.}
 LOOKBACK=${LOOKBACK:-50}
 REPETITIONS=${REPETITIONS:-3}
@@ -22,6 +27,7 @@ CASE_TIMEOUT=${CASE_TIMEOUT:-600}
 GIT_PUSH=${GIT_PUSH:-1}
 ONLY=${1:-}   # optional: a commit to measure now, queue and main ignored
 source "$ROOT/provider/clone-lib.sh"
+BX=${BX:-$WORK/venv/bin/bx}
 
 mkdir -p "$WORK"
 exec 9>"$WORK/node.lock"
@@ -34,6 +40,10 @@ ensure_clone
 fetch_main
 
 # ---- pick a commit -----------------------------------------------------------
+measured() {  # measured SHA: this node filed a finished (or failed) run for it
+  local st=$ROOT/runs/$1/$NODE_NAME/status.json
+  [[ -f $st ]] && python3 -c 'import json,sys; sys.exit(json.load(open(sys.argv[1])).get("state") not in ("finished", "failed"))' "$st"
+}
 pick() {
   local f name sha
   if [[ -n $ONLY ]]; then
@@ -45,17 +55,18 @@ pick() {
     name=$(basename "$f")
     [[ $name == README.md ]] && continue
     sha=$(resolve_commit "$name") || { echo "bench-node: queue/$name is not a commit; skipping" >&2; continue; }
-    [[ -d $ROOT/runs/$sha/$NODE_NAME ]] && continue
+    measured "$sha" && continue
     echo "$sha queue/$name"; return
   done
-  for sha in $(git -C "$CLONE" rev-list --first-parent -n "$LOOKBACK" origin/main); do
-    [[ -d $ROOT/runs/$sha/$NODE_NAME ]] || { echo "$sha main"; return; }
+  for sha in $(git -C "$CLONE" rev-list --first-parent -n "$LOOKBACK" "origin/$UPSTREAM_BRANCH"); do
+    measured "$sha" || { echo "$sha $UPSTREAM_BRANCH"; return; }
   done
 }
 read -r SHA REASON < <(pick) || true
 [[ -n ${SHA:-} ]] || { echo "bench-node: nothing to measure" >&2; exit 0; }
 
 RUN=$ROOT/runs/$SHA/$NODE_NAME
+[[ -d $RUN ]] && { echo "bench-node: clearing an interrupted run in $RUN" >&2; rm -rf "$RUN"; }
 mkdir -p "$RUN"
 exec > >(tee -a "$RUN/log.txt") 2>&1
 echo "== $(date -u +%FT%TZ) node=$NODE_NAME commit=$SHA reason=$REASON"
@@ -66,7 +77,7 @@ import json, sys
 sha, parents, author_date, committer_date, subject = sys.stdin.read().split("\n", 4)
 print(json.dumps({"sha": sha, "parents": parents.split(), "author_date": author_date,
                   "committer_date": committer_date, "subject": subject.rstrip("\n"),
-                  "branch": "main"}, indent=1))' >"$RUN/commit.json"
+                  "branch": sys.argv[1]}, indent=1))' "$UPSTREAM_BRANCH" >"$RUN/commit.json"
 
 status() {  # status STATE [extra json fields...]
   python3 - "$RUN/status.json" "$@" <<'PY'
@@ -88,26 +99,35 @@ if ! DESCRIPTION=$("$BX" target prepare "@cpp=$SHA" 2> >(tee "$RUN/build.log" >&
   echo "bench-node: the provider failed; keeping the tail of build.log"
   tail -n 300 "$RUN/build.log" >"$RUN/build.log.tail" && mv "$RUN/build.log.tail" "$RUN/build.log"
   status failed "finished_at=\"$(date -u +%FT%TZ)\"" 'stage="build"'
-  FAILED_BUILD=1
+  ABORTED=build
 else
   rm -f "$RUN/build.log"
-  FAILED_BUILD=0
+  ABORTED=
 fi
 
 # ---- measure -----------------------------------------------------------------
 OK=0; FAILED=0; SUITES_JSON="{}"
-if [[ $FAILED_BUILD == 0 ]]; then
+if [[ -z $ABORTED ]]; then
   BUILD=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["target"]["path"])' <<<"$DESCRIPTION")
   SRC=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["target"]["source_dir"])' <<<"$DESCRIPTION")
   export ARROW_TEST_DATA=$SRC/testing/data PARQUET_TEST_DATA=$SRC/cpp/submodules/parquet-testing/data
+  # Discovery: Arrow's benchmark binaries are release/*-benchmark. Another project
+  # changes this line, the adapter and --suite below (see PORTING.md).
   mapfile -t SUITES < <(cd "$BUILD/release" && ls -1 | grep -E -- '-benchmark$' | grep -E -- "$SUITE_FILTER" || true)
   echo "suites: ${#SUITES[@]}"
+  if [[ ${#SUITES[@]} == 0 ]]; then
+    echo "bench-node: no benchmark binary matches SUITE_FILTER='$SUITE_FILTER'"
+    status failed "finished_at=\"$(date -u +%FT%TZ)\"" 'stage="discover"'
+    ABORTED=discover
+  fi
+fi
+if [[ -z $ABORTED ]]; then
   for suite in "${SUITES[@]}"; do
     out=$RUN/suites/$suite
     mkdir -p "$out"
     echo "-- $suite"
     if "$BX" bench "$BUILD" --adapter google-benchmark --suite "release/$suite" \
-         --project arrow --run-key "main/$SHA/$NODE_NAME" --out "$out" \
+         --project "$PROJECT" --run-key "$UPSTREAM_BRANCH/$SHA/$NODE_NAME" --out "$out" \
          --repetitions "$REPETITIONS" --case-timeout "$CASE_TIMEOUT" --no-ingest >"$out/table.txt" 2>&1; then
       rc=0; OK=$((OK + 1))
     else
@@ -118,14 +138,14 @@ if [[ $FAILED_BUILD == 0 ]]; then
   done
   status finished "finished_at=\"$(date -u +%FT%TZ)\"" "suites=$SUITES_JSON" "suites_ok=$OK" "suites_failed=$FAILED"
 fi
-echo "== done: $OK suites ok, $FAILED failed, build failed: $FAILED_BUILD"
+echo "== done: $OK suites ok, $FAILED failed${ABORTED:+, stopped at $ABORTED}"
 
 # ---- file it -----------------------------------------------------------------
 if [[ $GIT_PUSH == 1 ]]; then
   git add "runs/$SHA"
   [[ $REASON == queue/* ]] && git rm -q "$REASON"
-  if [[ $FAILED_BUILD == 1 ]]; then msg="main ${SHA:0:12} on $NODE_NAME: build failed"
-  else msg="main ${SHA:0:12} on $NODE_NAME: $OK suites ok, $FAILED failed"; fi
+  if [[ -n $ABORTED ]]; then msg="$UPSTREAM_BRANCH ${SHA:0:12} on $NODE_NAME: $ABORTED failed"
+  else msg="$UPSTREAM_BRANCH ${SHA:0:12} on $NODE_NAME: $OK suites ok, $FAILED failed"; fi
   git commit -q -m "$msg"
   for attempt in 1 2 3 4 5; do
     git push -q && break

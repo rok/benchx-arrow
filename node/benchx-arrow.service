@@ -1,10 +1,10 @@
 [Unit]
-Description=benchx-arrow node: measure one Apache Arrow commit
+Description=benchx node for @PROJECT@: measure one upstream commit
 After=network-online.target
 
 [Service]
 Type=oneshot
-# Adjust to where the repository is checked out on this node.
-ExecStart=%h/Documents/repos/benchx-arrow/node/bench-node.sh
+# node/install-units.sh replaces @ROOT@ with the repository's path on this node.
+ExecStart=@ROOT@/node/bench-node.sh
 # One tick can take an hour or more (an Arrow build, then every benchmark binary).
 TimeoutStartSec=12h

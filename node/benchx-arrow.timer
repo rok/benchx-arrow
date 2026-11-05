@@ -1,5 +1,5 @@
 [Unit]
-Description=benchx-arrow node tick
+Description=benchx node tick for @PROJECT@
 
 [Timer]
 OnBootSec=5min

@@ -145,7 +145,12 @@ SELECT
 FROM (
     SELECT
         revision.key                                                         AS sha,
-        toString(coordinates.environment.identity.runner)                    AS node,
+        -- The node is the last part of the run key node/bench-node.sh writes
+        -- (<branch>/<sha>/<NODE_NAME>), the name runs/ is filed under; benchx's
+        -- runner identity is the hostname, which a node may rename.
+        if(ifNull(provenance.run_key, '') LIKE '%/%/%',
+           splitByChar('/', provenance.run_key)[-1],
+           toString(coordinates.environment.identity.runner))                AS node,
         replaceRegexpOne(toString(work_order.suites[1].suite), '^.*/', '')   AS suite,
         coordinates.workload.name                                            AS case,
         ifNull(toString(coordinates.workload.parameters), '')                AS params,
@@ -207,7 +212,7 @@ FROM (
         if(length(recent) > 1,  hist[1] / recent[2]  - 1, NULL)        AS vs_prev,
         if(length(recent) > 10, hist[1] / recent[11] - 1, NULL)        AS vs_10,
         if(length(hist) > 100,  hist[1] / hist[101]  - 1, NULL)        AS vs_100,
-        if(length(diffs) = 0, NULL, arrayReduce('median', diffs))      AS noise,
+        if(length(diffs) < 2, NULL, arrayReduce('median', diffs))      AS noise,
         if(length(recent) > 1, arrayReduce('stddevPop', recent) / arrayAvg(recent), NULL)  AS cv
     FROM (
         SELECT
@@ -254,6 +259,7 @@ def main(argv=None):
     ap.add_argument("--store", required=True, type=Path, help="the benchx store (store.parquet)")
     ap.add_argument("--runs", required=True, type=Path, help="the runs/ directory (commit.json, status.json)")
     ap.add_argument("--out", required=True, type=Path, help="where the tables go (site/data)")
+    ap.add_argument("--ingest-problems", type=int, default=0, help="suite directories the ingest rejected (shown on the page)")
     args = ap.parse_args(argv)
     out = args.out.resolve()
     out.mkdir(parents=True, exist_ok=True)
@@ -262,7 +268,12 @@ def main(argv=None):
     commits = read_commits(args.runs)
     counts["commits"] = write(commits, out / "commits.parquet", sort_by=[("commit_order", "descending"), ("node", "ascending")])
 
-    points = query(POINTS_SQL.format(store=parquet(args.store.resolve()), commits=parquet(out / "commits.parquet")))
+    # No store yet (a fresh template, or every run so far failed to build): publish
+    # the commits alone and let the page say so.
+    if args.store.is_file():
+        points = query(POINTS_SQL.format(store=parquet(args.store.resolve()), commits=parquet(out / "commits.parquet")))
+    else:
+        points = pa.table({})
     counts["points"] = write(points, out / "points.parquet")
     suite_counts = {}
     if points.num_rows:
@@ -290,6 +301,7 @@ def main(argv=None):
             "distinct_commits": len(set(commits.column("sha").to_pylist())),
             "nodes": sorted(set(commits.column("node").to_pylist())),
             "series": counts.get("latest", 0),
+            "ingest_problems": args.ingest_problems,
         },
         "latest_commit": {k: (v.isoformat() if isinstance(v, dt.datetime) else v) for k, v in newest[0].items()} if newest else None,
         "suites": suite_counts,
@@ -303,7 +315,7 @@ def main(argv=None):
         "notes": {
             "commit_order": "rank of committer_date among measured commits on main",
             "rel_change": "estimate / previous measured point of the same series - 1; a heuristic, not a verdict",
-            "noise": f"median of |consecutive rel_change| over the last {RECENT} points of the series",
+            "noise": f"median of |consecutive rel_change| over the last {RECENT} points of the series; NULL below 3 points",
         },
     }
     (out / "manifest.json").write_text(json.dumps(manifest, indent=1) + "\n")
