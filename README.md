@@ -1,9 +1,14 @@
 # benchx-arrow
 
 A prototype of continuous benchmarking for [Apache Arrow](https://github.com/apache/arrow)
-C++ with [benchx](https://github.com/benchx-dev/benchx): every commit on
-`main`, measured on a dedicated machine, with the results filed here as benchx
-documents.
+C++ with [benchx](https://github.com/benchx-dev/benchx): new commits on `main`,
+measured on a dedicated machine, with the results filed here as benchx documents
+and published as a dashboard at https://mihevc.org/benchx-arrow/.
+
+**Want this for your own project?** This repository is meant to be copied. Only
+the build (`provider/`) and the benchmark discovery (a few lines in
+`node/bench-node.sh`) are Arrow's; the project itself is one file,
+`project.json`. [PORTING.md](PORTING.md) walks through it, with a checklist.
 
 ## Shape
 
@@ -14,7 +19,8 @@ apache/arrow main ◀─ git fetch (timer) ─ benchmark node ─ git push ─�
                                                                                  │  on: push
                                                                                  ▼  hosted job, stateless
                                                                         bx ingest → store.parquet (cache + artifact)
-                                                                        summary in the job page
+                                                                        tools/marts.py → tables, tools/views.py → JSON
+                                                                        site/ → GitHub Pages
 ```
 
 - **The node pushes documents; everything else is derived.** A timer on the
@@ -39,6 +45,10 @@ apache/arrow main ◀─ git fetch (timer) ─ benchmark node ─ git push ─�
   target description whose `how_built` is the exact commands it ran. Nothing in
   benchx builds or tunes anything.
 
+Coverage is newest-first: each tick measures the newest commit on `main` the
+node has not measured, so a node faster than the branch measures every commit
+and a slower one skips some, which `queue/` backfills.
+
 This is the operational shape asv users run (cron, results committed, static
 publish), with what asv lacks: explicit skipping and backfill, machine identity
 and ancestry recorded with every run, dirty trees recorded instead of ignored,
@@ -47,20 +57,26 @@ and noise-aware verdicts once benchx's history mode exists.
 ## Layout
 
 ```
+project.json                 the project: name, title, upstream and branch, links, the pinned benchx
+PORTING.md                   how to make this benchmark another repository
 .benchx/provider.json        names the provider for `bx`
 provider/arrow-provider.sh   the Arrow C++ target provider (describe | prepare)
 provider/clone-lib.sh        the shared clone, fetch and resolve helpers
 node/bench-node.sh           one tick: pick, build, measure, file, push
+node/check-node.sh           preflight for a node: tools, upstream, push access, governor
+node/install-units.sh        install the systemd units for this checkout (--enable starts the timer)
 node/node.env.example        the node's settings; copy to node/node.env
-node/benchx-arrow.{service,timer}   systemd user units for the tick
+node/benchx-arrow.{service,timer}   systemd user units for the tick (templates; see install-units.sh)
 queue/                       requests (empty files named after commits)
 runs/                        the documents (see runs/README.md)
 tools/build-site.sh          ingest runs/ into a store, then derive site/data (local or CI)
 tools/marts.py               the derived tables, in chDB SQL (documented at the top of the file)
 tools/views.py               the page's JSON views, in chDB SQL over those tables
 tools/test_marts.py          the tables' arithmetic on synthetic points
+tools/test_views.py          the views: alignment with failures, failure lists, direction, an empty start
+tools/requirements.txt       the derived layer's dependencies (benchx is pinned in project.json)
 site/                        the dashboard (index.html, app.js, style.css); site/data/ is generated and git-ignored
-.github/workflows/publish.yml   build the store and the tables, deploy site/ to Pages
+.github/workflows/publish.yml   test, build the store and the tables, deploy site/ to Pages
 ```
 
 ## The derived tables
@@ -91,13 +107,26 @@ Every number on the page is computed there, by chDB; the page runs no engine.
 ## The dashboard
 
 `site/` is a static page over those views, in the spirit of ClickPy and asv's
-web UI: a front page with one small history chart per benchmark across every
-suite (sorted by largest change, filterable by suite and name, paged) above the
-recent commits, a suites index, a suite page with one small history chart per benchmark, a benchmark page
-with KPI tiles, the history chart (uPlot) and its biggest moves, and a commit page
-listing every change against the previous measured point. Changes are colored by
-the quantity's direction and carry the series' noise beside them. Light and dark
-follow the OS, with a toggle. Data is fetched with cache-busting query strings
+web UI. It answers "what did the latest run find?" first:
+
+- **Overview.** The latest run on each node: its commit, how many results
+  failed, the largest regressions and improvements against the previous
+  measurement, and every benchmark that failed, with benchx's reason. Below it,
+  one small history chart per benchmark across every suite (sorted by largest
+  change, filterable by suite and name, paged), recent commits, the noisiest
+  series and suite wall times.
+- **Suite, benchmark and commit pages.** A suite page has one small chart per
+  benchmark. A benchmark page has KPI tiles, the history chart (uPlot, with
+  failed attempts marked under the axis) and its biggest moves. A commit page
+  shows its runs with links to their logs, its failed results, and every change
+  with the baseline it was measured against.
+- **About.** How to read the numbers, and a pointer to PORTING.md.
+
+Changes are colored by the quantity's direction. A change smaller than twice
+the series' noise is drawn muted, because ordinary run-to-run variation would
+produce it too. Noise is shown only once a series has three measurements. Light
+and dark follow the OS, with a toggle. The title and links come from
+`project.json`. Data is fetched with cache-busting query strings
 because the Pages CDN caches files for four hours.
 
 To look at it locally after `tools/build-site.sh`: `python3 -m http.server -d site 8765`.
@@ -112,13 +141,18 @@ https://mihevc.org/benchx-arrow/.
 ```console
 $ git clone https://github.com/rok/benchx-arrow ~/benchx-arrow && cd ~/benchx-arrow
 $ cp node/node.env.example node/node.env && $EDITOR node/node.env
-$ uv venv ~/.benchx-arrow/venv && uv pip install --python ~/.benchx-arrow/venv/bin/python \
-      -e /path/to/benchx/prototype          # or pip install -e in any environment, and set BX=
+$ git clone https://github.com/rok/benchx ~/src/benchx && git -C ~/src/benchx checkout "$(jq -r .benchx.ref project.json)"
+$ uv venv ~/.benchx-arrow/venv && uv pip install --python ~/.benchx-arrow/venv/bin/python -e ~/src/benchx/prototype
+$ node/check-node.sh                        # preflight: tools, upstream, push access, governor
 $ GIT_PUSH=0 node/bench-node.sh             # a first tick, kept local: builds Arrow, measures, files under runs/
-$ mkdir -p ~/.config/systemd/user && cp node/benchx-arrow.* ~/.config/systemd/user/
-$ systemctl --user daemon-reload && systemctl --user enable --now benchx-arrow.timer
+$ git clean -fd runs/                       # drop that local run, or the timer will consider it measured
+$ node/install-units.sh --enable            # systemd user units benchx-arrow.*, pointing at this checkout
 $ loginctl enable-linger $USER              # keep the timer running without a login session
 ```
+
+The node commits and pushes as the git identity configured in this checkout,
+with whatever credentials `git push` uses there (an SSH deploy key with write
+access is the simplest). `check-node.sh` checks both.
 
 The node needs `git`, `cmake`, `ninja`, a C++ compiler, and Arrow's build
 dependencies; what the system lacks, Arrow's CMake fetches and builds
@@ -143,11 +177,11 @@ Prototype. Known gaps, in the order they bite:
 - No verdicts yet: benchx's comparator has run mode only. History mode
   (this commit against its ancestors, k × noise) is what turns the store into
   alerts; `commit.json` records the ancestry it will need.
-- The summary is a table of the latest results. Charts and per-commit reports
-  come after history mode.
-- The node and the publish job must run the same benchx (`BENCHX_REPO` and
-  `BENCHX_REF` in `publish.yml`); a result written under a newer schema is
-  rejected by an older store as malformed.
+- The node and the publish job must run the same benchx (`benchx.ref` in
+  `project.json`). A result written under a newer schema is rejected by an
+  older store as malformed, and the page shows how many runs were rejected.
+- The publish job's cached store is not reconciled with deletions: after
+  removing a run to re-measure it, drop the `store-` caches.
 
 Measured on the first run (two binaries, 94 results, one repetition): 2.3 MB of
 documents on disk, 75 KB compressed, so a full Arrow C++ run of about a

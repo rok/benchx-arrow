@@ -1,0 +1,5 @@
+# The derived layer (tools/marts.py, tools/views.py) and its tests. benchx itself
+# is pinned in project.json and installed separately.
+chdb==4.4.0
+pyarrow>=17
+pytest>=8

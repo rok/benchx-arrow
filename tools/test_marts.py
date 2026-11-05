@@ -74,8 +74,8 @@ def test_latest_summarizes_each_series(tables):
     # noise: median of |1.10/1.01-1|, |1.01/1.00-1|
     assert s["noise"] == pytest.approx((abs(1.10 / 1.01 - 1) + 0.01) / 2)
     q = by(lt, case="quiet")
-    assert q["noise"] == pytest.approx(0.01)
-    assert q["noise_rank"] == 0.0 and s["noise_rank"] == 1.0  # quiet is the quieter of two
+    assert q["noise"] is None  # two points: one change, which would be measured against itself
+    assert s["noise_rank"] == 0.0 and q["noise_rank"] == 1.0  # a series without noise ranks last
 
 
 def test_movers_rank_changes_per_commit(tables):
