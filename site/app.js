@@ -8,6 +8,11 @@
 const DATA = "data/";
 const SERIES_VARS = ["--series-1", "--series-2", "--series-3", "--series-4", "--series-5", "--series-6", "--series-7", "--series-8"];
 const PAGE = 48;
+// The benchx mark (site/logo.svg), inline so the legs follow the page's ink in
+// both themes; the small variant (site/favicon.svg) is drawn heavier for 16-32 px.
+const MARK = '<svg viewBox="0 0 64 64" aria-hidden="true" class="mark"><rect x="8" y="10" width="48" height="8" rx="2" fill="var(--brand)"/><path d="M18 24 L46 52 M46 24 L18 52" stroke="currentColor" stroke-width="7" stroke-linecap="round"/></svg>';
+const MARK_SMALL = '<svg viewBox="0 0 64 64" aria-hidden="true" class="mark"><rect x="8" y="8" width="48" height="8" rx="2" fill="var(--brand)"/><path d="M18 26 L46 52 M46 26 L18 52" stroke="currentColor" stroke-width="8" stroke-linecap="round"/></svg>';
+function wordmark(small) { return h("span", { class: "benchx" }, h("span", { html: small ? MARK_SMALL : MARK }), h("span", { class: "wm" }, "bench", h("b", {}, "x"))); }
 const state = { v: "", project: null, manifest: null, landing: null, series: null, sparks: null, histories: new Map(), commits: new Map(), charts: [], cleanup: [], nodeSlots: new Map() };
 
 // ---- utilities ------------------------------------------------------------------
@@ -675,7 +680,7 @@ function renderAbout() {
           h("li", {}, "A timer on the benchmark node picks the newest commit on ", h("a", { href: upstream }, `${upstream.replace(/^https:\/\/github.com\//, "")} ${P.upstream?.branch || ""}`), " it has not measured (or a requested one from ", h("code", {}, "queue/"), ")."),
           h("li", {}, "It builds that commit, runs every benchmark binary through benchx, and pushes the result documents to ", h("code", {}, "runs/<sha>/<node>/"), "."),
           h("li", {}, "A GitHub Actions job turns the documents into small tables and the JSON this page reads. Nothing here is stored anywhere else."))),
-      h("section", { class: "card" }, h("h3", {}, "Benchmark your own project this way"),
+      h("section", { class: "card" }, h("div", { class: "about-brand" }, wordmark()), h("h3", {}, "Benchmark your own project this way"),
         h("p", {}, "This repository is meant to be copied. Keep the node, the derived tables and this page; replace the build (the provider) and the benchmark discovery; set your project in ", h("code", {}, "project.json"), "."),
         h("p", {}, repo ? [h("a", { class: "button", href: `${repo}/blob/main/PORTING.md` }, "Porting guide →"), " ", h("a", { href: repo }, "repository")] : null))),
     h("h3", {}, "Reading the numbers"),
@@ -695,7 +700,7 @@ function footer() {
   const t = (name) => h("a", { href: `${DATA}${name}.parquet`, download: true }, name);
   return h("footer", {},
     h("span", {}, `built ${fmtDate(m.built_at)} · ${m.counts.points.toLocaleString()} results · data: `, t("points"), ", ", t("latest"), ", ", t("changes"), ", ", t("commits"), " (Parquet)"),
-    h("span", {}, "measured with ", h("a", { href: "https://github.com/benchx-dev/benchx" }, "benchx"), repo ? [" · ", h("a", { href: repo }, "source"), " · ", h("a", { href: `${repo}/blob/main/PORTING.md` }, "use this for your project")] : null));
+    h("span", { class: "made" }, "measured with ", h("a", { href: "https://github.com/benchx-dev/benchx", title: "benchx" }, wordmark(true)), repo ? [" · ", h("a", { href: repo }, "source"), " · ", h("a", { href: `${repo}/blob/main/PORTING.md` }, "use this for your project")] : null));
 }
 
 // ---- shell: header, search, theme, router -------------------------------------------
@@ -735,7 +740,7 @@ function header() {
   const theme = h("button", { class: "ghost", title: "cycle theme: auto / dark / light", onclick: (e) => { const cur = document.documentElement.dataset.theme || "auto"; applyTheme(cur === "auto" ? "dark" : cur === "dark" ? "light" : "auto"); e.currentTarget.textContent = label(); route(); } }, label());
   const nav = (href, text) => h("a", { href, "data-nav": href }, text);
   return h("header", { class: "top" },
-    h("h1", {}, h("a", { href: "#/" }, state.project.title || "Benchmarks")),
+    h("h1", {}, h("a", { href: "#/", class: "brand" }, h("span", { html: MARK }), state.project.title || "Benchmarks")),
     h("nav", {}, nav("#/", "overview"), nav("#/suites", "suites"), nav("#/about", "about")),
     h("div", { class: "search" }, input, list), theme);
 }

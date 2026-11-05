@@ -1,4 +1,4 @@
-# benchx-arrow
+# <img src="site/logo.svg" alt="" width="36" align="top"> benchx-arrow
 
 A prototype of continuous benchmarking for [Apache Arrow](https://github.com/apache/arrow)
 C++ with [benchx](https://github.com/benchx-dev/benchx): new commits on `main`,
@@ -75,7 +75,7 @@ tools/views.py               the page's JSON views, in chDB SQL over those table
 tools/test_marts.py          the tables' arithmetic on synthetic points
 tools/test_views.py          the views: alignment with failures, failure lists, direction, an empty start
 tools/requirements.txt       the derived layer's dependencies (benchx is pinned in project.json)
-site/                        the dashboard (index.html, app.js, style.css); site/data/ is generated and git-ignored
+site/                        the dashboard (index.html, app.js, style.css, logo.svg, favicon.svg); site/data/ is generated and git-ignored
 .github/workflows/publish.yml   test, build the store and the tables, deploy site/ to Pages
 ```
 
