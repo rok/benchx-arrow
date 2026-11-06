@@ -128,8 +128,9 @@ Changes are colored by the quantity's direction. A change smaller than twice
 the series' noise is drawn muted, because ordinary run-to-run variation would
 produce it too. Noise is shown only once a series has three measurements. Light
 and dark follow the OS, with a toggle. The title and links come from
-`project.json`. Data is fetched with cache-busting query strings
-because the Pages CDN caches files for four hours.
+`project.json`. Data is fetched with cache-busting query strings, and the
+publish job stamps its commit into the asset URLs in `index.html`, because
+Pages caches files for four hours.
 
 To look at it locally after `tools/build-site.sh`: `python3 -m http.server -d site 8765`.
 

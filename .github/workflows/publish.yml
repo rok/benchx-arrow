@@ -29,6 +29,10 @@ jobs:
         run: python -m pytest -q tools
       - name: derive
         run: tools/build-site.sh
+      # Pages caches files for four hours, in browsers too. A commit in each asset URL
+      # keeps a page from mixing files of two deploys.
+      - name: stamp the asset URLs
+        run: sed -i -E 's/(href="(style\.css|favicon\.svg)|src="app\.js)"/\1?v=${{ github.sha }}"/' site/index.html
       - name: summary
         run: |
           {
