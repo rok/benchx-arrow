@@ -1,5 +1,7 @@
-# The derived layer (tools/marts.py, tools/views.py) and its tests. benchx itself
-# is pinned in project.json and installed separately.
+# One environment for the node and the publish job, which must run the same benchx:
+# a result written under a newer schema is rejected by an older store.
+benchx==0.1.0
+# The derived layer (tools/marts.py, tools/views.py) and its tests.
 chdb==4.4.0
-pyarrow>=17
+pyarrow>=19
 pytest>=8

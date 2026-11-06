@@ -1,0 +1,5 @@
+{
+ "schema_version": "benchx/config/0.1.0",
+ "provider": { "command": ["provider/arrow-provider.sh"] },
+ "adapter": { "name": "google-benchmark" }
+}

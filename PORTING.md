@@ -12,9 +12,9 @@ expensive part is a quiet machine to measure on; nothing else needs a server.
 
 | piece | files | for your project |
 |---|---|---|
-| project settings | `project.json` | **edit**: name, title, upstream URL and branch, commit link, this repository's URL, the benchx version |
-| build | `provider/arrow-provider.sh`, `.benchx/provider.json` | **replace**: how to check out and build one commit |
-| benchmark discovery | `node/bench-node.sh`, the `measure` section (marked `Discovery`) | **edit**: which binaries or commands to run, and with which benchx adapter |
+| project settings | `project.json` | **edit**: name, title, upstream URL and branch, commit link, this repository's URL |
+| build | `provider/arrow-provider.sh`, `benchx.conf.json` | **replace**: how to check out and build one commit |
+| benchmark discovery | `node/bench-node.sh`, the `measure` section (marked `Discovery`), `benchx.conf.json` | **edit**: which binaries or commands to run, and with which benchx adapter |
 | node settings | `node/node.env.example` | edit the defaults; each node keeps its own `node/node.env` |
 | the node tick | the rest of `node/bench-node.sh`, `provider/clone-lib.sh` | keep |
 | node install and checks | `node/install-units.sh`, `node/check-node.sh`, `node/benchx-arrow.{service,timer}` | keep; the units are installed as `benchx-<name>` and the work directory defaults to `~/.benchx-<name>`, so several projects can share a node |
@@ -44,8 +44,7 @@ git commit -m "start from an empty runs/"
   "branch": "main",
   "commit_url": "https://github.com/me/mylib/commit/{sha}"
  },
- "repository": "https://github.com/me/mylib-bench",
- "benchx": { "repository": "rok/benchx", "ref": "<a benchx commit>" }
+ "repository": "https://github.com/me/mylib-bench"
 }
 ```
 
@@ -55,13 +54,11 @@ git commit -m "start from an empty runs/"
   `branch` (first parent), and the page links commits with `commit_url`.
 - `repository` is this repository. The page uses it to link run logs and
   documents. Leave it empty to hide those links.
-- `benchx.ref` pins the benchx the publish job installs. Nodes must run the same
-  one, because a result written by a newer benchx is rejected by an older store.
 
 ## 3. Write the provider: how to build one commit
 
 benchx never builds anything. It asks a *target provider*, a program named in
-`.benchx/provider.json`, for a built tree. The provider reads one JSON request
+`benchx.conf.json`, for a built tree. The provider reads one JSON request
 on stdin and prints one target description on stdout. Everything else, the
 build output above all, goes to stderr.
 
@@ -115,12 +112,12 @@ and runs each one through `bx bench`:
 # Discovery: Arrow's benchmark binaries are release/*-benchmark. …
 mapfile -t SUITES < <(cd "$BUILD/release" && ls -1 | grep -E -- '-benchmark$' | grep -E -- "$SUITE_FILTER" || true)
 …
-"$BX" bench "$BUILD" --adapter google-benchmark --suite "release/$suite" …
+"$BX" bench "$BUILD" --suite "release/$suite" …
 ```
 
 Change the `ls | grep` to list your benchmark executables relative to the
-build directory. If they are not Google Benchmark binaries, change `--adapter`
-(`bx bench --help` lists the adapters your benchx has). Each suite becomes a
+build directory. If they are not Google Benchmark binaries, change `adapter.name`
+in `benchx.conf.json` (`bx bench --help` lists the adapters your benchx has). Each suite becomes a
 directory under `runs/<sha>/<node>/suites/` and a suite on the page.
 
 If your benchmarks need environment variables or test data, export them just
@@ -130,18 +127,19 @@ above that line, the way Arrow's `ARROW_TEST_DATA` is.
 
 ```bash
 cp node/node.env.example node/node.env    # NODE_NAME, BX, SUITE_FILTER, REPETITIONS…
+uv venv ~/.benchx-mylib/venv && uv pip install --python ~/.benchx-mylib/venv/bin/python -r tools/requirements.txt
 node/check-node.sh                        # preflight: tools, upstream, push access, CPU governor
 GIT_PUSH=0 node/bench-node.sh             # one tick: build, measure, file under runs/, no push
 ```
 
 Narrow `SUITE_FILTER` to one fast suite for this first run. Then look at what
 it filed: `runs/<sha>/<node>/status.json` and `log.txt`, and one result
-document under `suites/`. If you have the derived layer's dependencies
-(`pip install -r tools/requirements.txt` plus benchx), you can see the
-dashboard before pushing anything:
+document under `suites/`. That venv can also build the dashboard, so you can
+see it before pushing anything:
 
 ```bash
-BX=… PYTHON=… tools/build-site.sh && python3 -m http.server -d site 8765
+BX=~/.benchx-mylib/venv/bin/bx PYTHON=~/.benchx-mylib/venv/bin/python tools/build-site.sh
+python3 -m http.server -d site 8765
 ```
 
 That run stays local: it is not committed, and it measured only the suites
@@ -172,9 +170,9 @@ it lists the runs instead, and each one links to its log.
 ## Checklist
 
 - [ ] `runs/` emptied, `queue/` has only its README
-- [ ] `project.json`: name, title, upstream (url, branch, commit_url), repository, benchx ref
+- [ ] `project.json`: name, title, upstream (url, branch, commit_url), repository
 - [ ] provider: builds one commit by hand and prints a description
-- [ ] `.benchx/provider.json` names the provider
+- [ ] `benchx.conf.json` names the provider and the adapter
 - [ ] discovery and adapter in `node/bench-node.sh` find your benchmarks
 - [ ] `node/check-node.sh` passes on the benchmark machine
 - [ ] one tick with `GIT_PUSH=0` filed a run that looks right on a local build of the page
@@ -185,8 +183,9 @@ it lists the runs instead, and each one links to its log.
 ## Things that bite
 
 - **The benchx versions must match.** The node writes documents with its
-  benchx, and the publish job reads them with the benchx `project.json` pins.
-  Upgrade both together. The page shows a warning when the ingest rejects runs.
+  benchx, and the publish job reads them with the one `tools/requirements.txt`
+  pins. Upgrade both together, and re-measure when the result schema changes:
+  the store rejects documents from another schema, and the page warns when it does.
 - **A node is a machine, not a name.** Results from different hardware are
   different series. When a machine is replaced, give the new one a new
   `NODE_NAME`. The name is what runs are filed under and what the page shows.

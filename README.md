@@ -57,9 +57,9 @@ and noise-aware verdicts once benchx's history mode exists.
 ## Layout
 
 ```
-project.json                 the project: name, title, upstream and branch, links, the pinned benchx
+project.json                 the project: name, title, upstream and branch, links
 PORTING.md                   how to make this benchmark another repository
-.benchx/provider.json        names the provider for `bx`
+benchx.conf.json             how `bx` measures: the provider and the adapter
 provider/arrow-provider.sh   the Arrow C++ target provider (describe | prepare)
 provider/clone-lib.sh        the shared clone, fetch and resolve helpers
 node/bench-node.sh           one tick: pick, build, measure, file, push
@@ -74,7 +74,8 @@ tools/marts.py               the derived tables, in chDB SQL (documented at the 
 tools/views.py               the page's JSON views, in chDB SQL over those tables
 tools/test_marts.py          the tables' arithmetic on synthetic points
 tools/test_views.py          the views: alignment with failures, failure lists, direction, an empty start
-tools/requirements.txt       the derived layer's dependencies (benchx is pinned in project.json)
+tools/test_store.py          the points, on a store the pinned benchx wrote from testdata/
+tools/requirements.txt       the pinned benchx and the derived layer's dependencies
 site/                        the dashboard (index.html, app.js, style.css, logo.svg, favicon.svg); site/data/ is generated and git-ignored
 .github/workflows/publish.yml   test, build the store and the tables, deploy site/ to Pages
 ```
@@ -141,8 +142,7 @@ https://mihevc.org/benchx-arrow/.
 ```console
 $ git clone https://github.com/rok/benchx-arrow ~/benchx-arrow && cd ~/benchx-arrow
 $ cp node/node.env.example node/node.env && $EDITOR node/node.env
-$ git clone https://github.com/rok/benchx ~/src/benchx && git -C ~/src/benchx checkout "$(jq -r .benchx.ref project.json)"
-$ uv venv ~/.benchx-arrow/venv && uv pip install --python ~/.benchx-arrow/venv/bin/python -e ~/src/benchx/prototype
+$ uv venv ~/.benchx-arrow/venv && uv pip install --python ~/.benchx-arrow/venv/bin/python -r tools/requirements.txt
 $ node/check-node.sh                        # preflight: tools, upstream, push access, governor
 $ GIT_PUSH=0 node/bench-node.sh             # a first tick, kept local: builds Arrow, measures, files under runs/
 $ git clean -fd runs/                       # drop that local run, or the timer will consider it measured
@@ -168,18 +168,18 @@ fixed frequency governor, upgrades applied deliberately between runs
 
 Prototype. Known gaps, in the order they bite:
 
-- `bx bench` has no order-level timeout flag; the runner's default of 600 s per
-  order cuts long benchmark binaries short, with the unstarted cases filed as
-  `timeout-order` errors. Needs a flag in benchx.
+- The runner's default of 600 s per order cuts long benchmark binaries short,
+  with the unstarted cases filed as `timeout-order` errors. `timeouts.order_s`
+  in `benchx.conf.json` raises it.
 - benchx's Google Benchmark adapter translates wall time and CPU time only.
   Arrow's benchmarks report mostly through `bytes_per_second` and
   `items_per_second` counters, which are not yet quantities.
 - No verdicts yet: benchx's comparator has run mode only. History mode
   (this commit against its ancestors, k × noise) is what turns the store into
   alerts; `commit.json` records the ancestry it will need.
-- The node and the publish job must run the same benchx (`benchx.ref` in
-  `project.json`). A result written under a newer schema is rejected by an
-  older store as malformed, and the page shows how many runs were rejected.
+- The node and the publish job must run the same benchx (`tools/requirements.txt`).
+  A result written under another schema is rejected by the store as malformed,
+  and the page shows how many runs were rejected.
 - The publish job's cached store is not reconciled with deletions: after
   removing a run to re-measure it, drop the `store-` caches.
 

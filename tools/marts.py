@@ -154,9 +154,9 @@ FROM (
         replaceRegexpOne(toString(work_order.suites[1].suite), '^.*/', '')   AS suite,
         coordinates.workload.name                                            AS case,
         ifNull(toString(coordinates.workload.parameters), '')                AS params,
-        coordinates.quantity.name                                            AS quantity,
-        coordinates.quantity.unit                                            AS unit,
-        ifNull(coordinates.quantity.direction, '')                           AS direction,
+        measurement.quantity.name                                            AS quantity,
+        measurement.quantity.unit                                            AS unit,
+        ifNull(measurement.quantity.direction, '')                           AS direction,
         measurement.status                                                   AS status,
         ifNull(measurement.reason, '')                                       AS reason,
         arrayMap(o -> tupleElement(o, 'value'), measurement.observations)    AS vals,
@@ -164,6 +164,8 @@ FROM (
         ifNull(provenance.run_key, '')                                       AS run_key,
         ingest_key
     FROM {store}
+    -- A condition (the load-average beside each case) is context, not a benchmark.
+    WHERE ifNull(measurement.kind, 'measurand') = 'measurand'
 ) AS s
 LEFT JOIN (SELECT sha, node, commit_order, committer_date, ifNull(parent, '') AS parent FROM {commits}) AS c
     ON s.sha = c.sha AND s.node = c.node

@@ -7,9 +7,5 @@
   "branch": "main",
   "commit_url": "https://github.com/apache/arrow/commit/{sha}"
  },
- "repository": "https://github.com/rok/benchx-arrow",
- "benchx": {
-  "repository": "rok/benchx",
-  "ref": "1c462b99d31799b16a207e4e832b2008269e73ae"
- }
+ "repository": "https://github.com/rok/benchx-arrow"
 }

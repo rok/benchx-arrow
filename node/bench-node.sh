@@ -112,7 +112,7 @@ if [[ -z $ABORTED ]]; then
   SRC=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["target"]["source_dir"])' <<<"$DESCRIPTION")
   export ARROW_TEST_DATA=$SRC/testing/data PARQUET_TEST_DATA=$SRC/cpp/submodules/parquet-testing/data
   # Discovery: Arrow's benchmark binaries are release/*-benchmark. Another project
-  # changes this line, the adapter and --suite below (see PORTING.md).
+  # changes this line and --suite below (see PORTING.md); the adapter is in benchx.conf.json.
   mapfile -t SUITES < <(cd "$BUILD/release" && ls -1 | grep -E -- '-benchmark$' | grep -E -- "$SUITE_FILTER" || true)
   echo "suites: ${#SUITES[@]}"
   if [[ ${#SUITES[@]} == 0 ]]; then
@@ -126,14 +126,14 @@ if [[ -z $ABORTED ]]; then
     out=$RUN/suites/$suite
     mkdir -p "$out"
     echo "-- $suite"
-    if "$BX" bench "$BUILD" --adapter google-benchmark --suite "release/$suite" \
+    if "$BX" bench "$BUILD" --suite "release/$suite" \
          --project "$PROJECT" --run-key "$UPSTREAM_BRANCH/$SHA/$NODE_NAME" --out "$out" \
          --repetitions "$REPETITIONS" --case-timeout "$CASE_TIMEOUT" --no-ingest >"$out/table.txt" 2>&1; then
       rc=0; OK=$((OK + 1))
     else
       rc=$?; FAILED=$((FAILED + 1)); echo "   exit $rc"
     fi
-    n=$(ls "$out"/*.json 2>/dev/null | grep -vc workorder- || true)
+    n=$(ls "$out"/*.json 2>/dev/null | grep -vcE 'workorder-|_load-average\.json$' || true)
     SUITES_JSON=$(python3 -c 'import json,sys; d=json.loads(sys.argv[1]); d[sys.argv[2]]={"exit":int(sys.argv[3]),"results":int(sys.argv[4])}; print(json.dumps(d))' "$SUITES_JSON" "$suite" "$rc" "$n")
   done
   status finished "finished_at=\"$(date -u +%FT%TZ)\"" "suites=$SUITES_JSON" "suites_ok=$OK" "suites_failed=$FAILED"
