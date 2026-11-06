@@ -1,8 +1,6 @@
-# Derived from the repository, never a source of truth: ingest every run under
-# runs/ into a benchx store, derive the dashboard's tables (tools/marts.py), keep
-# the store as a cache and an artifact, and publish site/ to GitHub Pages when the
-# repository variable PAGES_ENABLED is "true". Delete the cache and this job
-# rebuilds everything from the documents.
+# Derived from the repository, never a source of truth: derive the dashboard's
+# tables from the Parquet files under runs/ (tools/marts.py) and publish site/ to
+# GitHub Pages when the repository variable PAGES_ENABLED is "true".
 name: publish
 on:
   push:
@@ -29,47 +27,19 @@ jobs:
       - run: pip install -q -r tools/requirements.txt
       - name: test the derived tables and views
         run: python -m pytest -q tools
-      # The store's format belongs to the benchx that wrote it: a new pin starts a new store.
-      - uses: actions/cache/restore@v4
-        with:
-          path: |
-            _home/store.parquet
-            _home/ingested.txt
-          key: store-${{ hashFiles('tools/requirements.txt') }}-${{ github.sha }}
-          restore-keys: store-${{ hashFiles('tools/requirements.txt') }}-
-      - name: ingest and derive
-        env:
-          BENCHX_HOME: ${{ github.workspace }}/_home
+      - name: derive
         run: tools/build-site.sh
       - name: summary
-        env:
-          BENCHX_HOME: ${{ github.workspace }}/_home
         run: |
           {
             echo "## ${{ steps.project.outputs.name }} benchmarks"
             echo
             echo "commits measured: $(ls runs | grep -vc README || true)"
-            echo "series: $(bx series | wc -l)"
             echo
             echo '```json'
             cat site/data/manifest.json
             echo '```'
-            echo
-            echo '```'
-            bx head --table --project "${{ steps.project.outputs.name }}" -n 40
-            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/cache/save@v4
-        if: always()
-        with:
-          path: |
-            _home/store.parquet
-            _home/ingested.txt
-          key: store-${{ hashFiles('tools/requirements.txt') }}-${{ github.sha }}
-      - uses: actions/upload-artifact@v4
-        with:
-          name: store
-          path: _home/store.parquet
       - uses: actions/upload-artifact@v4
         with:
           name: site

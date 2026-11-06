@@ -35,12 +35,11 @@ def point(i, case, estimate, status="success", quantity="wall-time", direction="
 
 def write_runs(runs: Path, n: int):
     for i in range(1, n + 1):
-        d = runs / SHAS[i - 1] / "n1"
-        d.mkdir(parents=True)
-        (d / "commit.json").write_text(json.dumps({"sha": SHAS[i - 1], "parents": [SHAS[i - 2] if i > 1 else "0" * 40],
-                                                   "committer_date": f"2026-01-0{i}T00:00:00+00:00", "subject": f"commit {i}"}))
-        (d / "status.json").write_text(json.dumps({"state": "finished", "node": "n1", "suites_ok": 1, "suites_failed": 0,
-                                                   "suites": {"s": {"exit": 0, "results": 3}}}))
+        marts.write_run(runs / SHAS[i - 1] / "n1",
+                        {"sha": SHAS[i - 1], "parents": [SHAS[i - 2] if i > 1 else "0" * 40],
+                         "committer_date": f"2026-01-0{i}T00:00:00+00:00", "subject": f"commit {i}"},
+                        {"state": "finished", "node": "n1", "suites_ok": 1, "suites_failed": 0,
+                         "suites": {"s": {"exit": 0, "results": 3}}})
 
 
 def build(tmp_path: Path, points: list[dict], n_commits: int = 4) -> Path:

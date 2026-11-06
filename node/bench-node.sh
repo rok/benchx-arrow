@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# One tick of a benchx-arrow node: measure one Arrow commit, file the documents
-# under runs/<sha>/<node>/, commit, push. Run it from a timer; it exits at once
-# when nothing is pending or another tick holds the lock.
+# One tick of a benchx-arrow node: measure one Arrow commit, file it as Parquet
+# under runs/<sha>/<node>/, commit, push. The raw documents stay on the node, in
+# $WORK/raw. Run it from a timer; it exits at once when nothing is pending or
+# another tick holds the lock.
 #
 # Which commit: the first entry in queue/ this node has not measured, else the
 # newest commit on the upstream branch (project.json; first-parent, LOOKBACK
 # deep) it has not measured. Nothing else decides what runs; the repository is
-# the state. A run directory left behind by an interrupted tick (state still
-# "running") does not count as measured: the next tick clears it and retries.
+# the state. run.parquet is written last, so an interrupted tick does not count
+# as measured: the next tick clears what it left in $WORK/raw and retries.
 #
 # Coverage: each tick takes the newest unmeasured commit, so a node faster than
 # the branch measures every commit and a slower one skips some; queue/ backfills.
@@ -16,7 +17,7 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT=$(cd "$HERE/.." && pwd)
 # node.env holds this node's defaults; a variable set on the command line
 # (GIT_PUSH=0 node/bench-node.sh) wins over it.
-OVERRIDES=$(for v in NODE_NAME BX SUITE_FILTER LOOKBACK REPETITIONS CASE_TIMEOUT BUILD_JOBS GIT_PUSH; do [[ -v $v ]] && printf '%s=%q\n' "$v" "${!v}"; done)
+OVERRIDES=$(for v in NODE_NAME BX PYTHON SUITE_FILTER LOOKBACK REPETITIONS CASE_TIMEOUT BUILD_JOBS GIT_PUSH; do [[ -v $v ]] && printf '%s=%q\n' "$v" "${!v}"; done)
 [[ -f $HERE/node.env ]] && source "$HERE/node.env"
 eval "$OVERRIDES"
 NODE_NAME=${NODE_NAME:-$(hostname -s)}
@@ -28,6 +29,7 @@ GIT_PUSH=${GIT_PUSH:-1}
 ONLY=${1:-}   # optional: a commit to measure now, queue and main ignored
 source "$ROOT/provider/clone-lib.sh"
 BX=${BX:-$WORK/venv/bin/bx}
+PYTHON=${PYTHON:-$WORK/venv/bin/python}
 
 mkdir -p "$WORK"
 exec 9>"$WORK/node.lock"
@@ -41,8 +43,7 @@ fetch_main
 
 # ---- pick a commit -----------------------------------------------------------
 measured() {  # measured SHA: this node filed a finished (or failed) run for it
-  local st=$ROOT/runs/$1/$NODE_NAME/status.json
-  [[ -f $st ]] && python3 -c 'import json,sys; sys.exit(json.load(open(sys.argv[1])).get("state") not in ("finished", "failed"))' "$st"
+  [[ -f $ROOT/runs/$1/$NODE_NAME/run.parquet ]]
 }
 pick() {
   local f name sha
@@ -65,8 +66,8 @@ pick() {
 read -r SHA REASON < <(pick) || true
 [[ -n ${SHA:-} ]] || { echo "bench-node: nothing to measure" >&2; exit 0; }
 
-RUN=$ROOT/runs/$SHA/$NODE_NAME
-[[ -d $RUN ]] && { echo "bench-node: clearing an interrupted run in $RUN" >&2; rm -rf "$RUN"; }
+RUN=$WORK/raw/$SHA/$NODE_NAME
+[[ -d $RUN ]] && { echo "bench-node: clearing an earlier attempt in $RUN" >&2; rm -rf "$RUN"; }
 mkdir -p "$RUN"
 exec > >(tee -a "$RUN/log.txt") 2>&1
 echo "== $(date -u +%FT%TZ) node=$NODE_NAME commit=$SHA reason=$REASON"
@@ -141,6 +142,20 @@ fi
 echo "== done: $OK suites ok, $FAILED failed${ABORTED:+, stopped at $ABORTED}"
 
 # ---- file it -----------------------------------------------------------------
+# The repository takes Parquet only: a store of this run and one row about it.
+FILED=$ROOT/runs/$SHA/$NODE_NAME
+PROBLEMS=0
+for dir in "$RUN"/suites/*/; do
+  [[ -d $dir ]] || continue
+  if ! out=$(BENCHX_HOME=$RUN "$BX" ingest "$dir" 2>&1); then
+    echo "ingest problems in $dir:"; echo "$out" | tail -5; PROBLEMS=$((PROBLEMS + 1))
+  fi
+done
+mkdir -p "$FILED"
+rm -f "$FILED/results.parquet"
+[[ -f $RUN/store.parquet ]] && mv "$RUN/store.parquet" "$FILED/results.parquet"
+"$PYTHON" "$ROOT/tools/file_run.py" --raw "$RUN" --out "$FILED" --ingest-problems "$PROBLEMS"
+
 if [[ $GIT_PUSH == 1 ]]; then
   git add "runs/$SHA"
   [[ $REASON == queue/* ]] && git rm -q "$REASON"

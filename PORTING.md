@@ -3,7 +3,7 @@
 This repository benchmarks Apache Arrow C++, but only two pieces of it are
 specific to Arrow. Copy it, replace those two pieces, set your project in one
 file, and you get the same thing for your repository: a machine that measures
-new commits, results kept as documents in git, and a dashboard on GitHub Pages.
+new commits, results kept as Parquet in git, and a dashboard on GitHub Pages.
 
 Plan on an afternoon if your benchmarks already run from the command line. The
 expensive part is a quiet machine to measure on; nothing else needs a server.
@@ -52,8 +52,8 @@ git commit -m "start from an empty runs/"
   changing it starts new series.
 - `upstream` is the repository being measured. The node clones it, follows
   `branch` (first parent), and the page links commits with `commit_url`.
-- `repository` is this repository. The page uses it to link run logs and
-  documents. Leave it empty to hide those links.
+- `repository` is this repository. The page uses it to link each run's
+  Parquet files. Leave it empty to hide those links.
 
 ## 3. Write the provider: how to build one commit
 
@@ -118,7 +118,7 @@ mapfile -t SUITES < <(cd "$BUILD/release" && ls -1 | grep -E -- '-benchmark$' | 
 Change the `ls | grep` to list your benchmark executables relative to the
 build directory. If they are not Google Benchmark binaries, change `adapter.name`
 in `benchx.conf.json` (`bx bench --help` lists the adapters your benchx has). Each suite becomes a
-directory under `runs/<sha>/<node>/suites/` and a suite on the page.
+directory under `$WORK/raw/<sha>/<node>/suites/` on the node and a suite on the page.
 
 If your benchmarks need environment variables or test data, export them just
 above that line, the way Arrow's `ARROW_TEST_DATA` is.
@@ -133,12 +133,13 @@ GIT_PUSH=0 node/bench-node.sh             # one tick: build, measure, file under
 ```
 
 Narrow `SUITE_FILTER` to one fast suite for this first run. Then look at what
-it filed: `runs/<sha>/<node>/status.json` and `log.txt`, and one result
-document under `suites/`. That venv can also build the dashboard, so you can
-see it before pushing anything:
+it left on the node: `~/.benchx-mylib/raw/<sha>/<node>/status.json` and `log.txt`,
+and one result document under `suites/`. The repository gets only
+`runs/<sha>/<node>/results.parquet` and `run.parquet`. That venv can also build
+the dashboard, so you can see it before pushing anything:
 
 ```bash
-BX=~/.benchx-mylib/venv/bin/bx PYTHON=~/.benchx-mylib/venv/bin/python tools/build-site.sh
+PYTHON=~/.benchx-mylib/venv/bin/python tools/build-site.sh
 python3 -m http.server -d site 8765
 ```
 
@@ -160,8 +161,8 @@ uncommitted runs.
 
 1. In the repository settings, enable Pages with GitHub Actions as the source.
 2. `gh variable set PAGES_ENABLED --body true`
-3. Push. The `publish` workflow tests the derived layer, ingests `runs/`,
-   builds the tables and views, and deploys `site/`.
+3. Push. The `publish` workflow tests the derived layer, builds the tables and
+   views from `runs/`, and deploys `site/`.
 
 Until the first result arrives, the page says it is waiting for one and shows
 these steps. If a run is filed but every benchmark failed (a broken build, say),
@@ -182,10 +183,12 @@ it lists the runs instead, and each one links to its log.
 
 ## Things that bite
 
-- **The benchx versions must match.** The node writes documents with its
-  benchx, and the publish job reads them with the one `tools/requirements.txt`
-  pins. Upgrade both together, and re-measure when the result schema changes:
-  the store rejects documents from another schema, and the page warns when it does.
+- **Upgrade benchx deliberately.** Every node installs the benchx
+  `tools/requirements.txt` pins. Parquet from two result schemas does not read as
+  one table, so re-measure what should stay on the page when the schema changes,
+  and regenerate `tools/testdata/results.parquet` (see `tools/test_store.py`).
+- **Raw files stay on the node.** `$WORK/raw` grows with every run and nothing
+  needs it after filing. Prune it when you like.
 - **A node is a machine, not a name.** Results from different hardware are
   different series. When a machine is replaced, give the new one a new
   `NODE_NAME`. The name is what runs are filed under and what the page shows.
@@ -200,7 +203,4 @@ it lists the runs instead, and each one links to its log.
 - **Coverage.** Each tick measures the newest unmeasured commit on the branch.
   A node slower than the branch skips commits; put the ones you care about in
   `queue/` (an empty file named after the commit).
-- **Re-measuring.** Delete `runs/<sha>/<node>/` and add `queue/<sha>`. The
-  publish job's cached store keeps the old results until its cache is
-  dropped. Re-run the workflow after deleting the `store-` caches under
-  Actions → Caches.
+- **Re-measuring.** Delete `runs/<sha>/<node>/` and add `queue/<sha>`.

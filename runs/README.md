@@ -1,16 +1,14 @@
 # runs/
 
-The system of record: one directory per measured commit and node.
+The system of record: one directory per measured commit and node, Parquet only.
 
 ```
 runs/<sha>/<node>/
-  commit.json        sha, parents, dates, subject (ancestry for history comparisons)
-  status.json        state, reason (main | queue/<name> | argument), timings, per-suite exits
-  log.txt            the tick's log
-  build.log          only when the build failed: its last lines
-  suites/<binary>/   one `bx bench` run: orders/order.json, workorder-*.json,
-                     one result document per case and quantity, table.txt
+  run.parquet        one row: sha, parents, dates, subject, state, reason, timings,
+                     suite counts, the tick's log
+  results.parquet    a benchx store of this run, every result with its full document;
+                     absent when nothing was measured (a failed build)
 ```
 
-Everything else in this repository is derived from these documents and can
-be regenerated.
+Everything else in this repository is derived from these files and can be
+regenerated. Raw documents and harness output stay on the node, in `$WORK/raw`.
