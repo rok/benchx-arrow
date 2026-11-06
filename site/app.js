@@ -91,10 +91,11 @@ function ago(s) {
 }
 function shortSuite(s) { return s.replace(/^arrow-|-benchmark$/g, ""); }
 function upstreamCommit(sha) { return (state.project.upstream?.commit_url || "").replace("{sha}", sha); }
-function runDocs(sha, node, file = "") {
+function runFiles(sha, node) {
   const repo = state.project.repository;
-  return repo ? `${repo}/${file ? "blob" : "tree"}/main/runs/${sha}/${node}${file ? "/" + file : ""}` : null;
+  return repo ? `${repo}/tree/main/runs/${sha}/${node}` : null;
 }
+function runLog(sha, node) { return `data/logs/${sha}/${node}.txt`; }
 function multiNode() { return (state.landing?.stats.nodes || []).length > 1; }
 
 // A change is judged three ways: its direction (the quantity says whether up is
@@ -327,7 +328,7 @@ function latestRun(run, L) {
         h("div", { class: "eyebrow" }, `Newest commit measured on ${run.node} · run ${ago(run.finished_at || run.started_at) || fmtDate(run.committer_date)}`),
         h("h2", {}, h("a", { href: `#/c/${run.sha}`, class: "mono" }, run.short), " ", run.subject),
         h("div", { class: "note" }, `committed ${fmtDate(run.committer_date)} · `, h("a", { href: upstreamCommit(run.sha), target: "_blank", rel: "noopener" }, "upstream commit"),
-          runDocs(run.sha, run.node) ? [" · ", h("a", { href: runDocs(run.sha, run.node, "log.txt"), target: "_blank", rel: "noopener" }, "run log")] : null)),
+          " · ", h("a", { href: runLog(run.sha, run.node), target: "_blank", rel: "noopener" }, "run log"))),
       h("a", { class: "button", href: `#/c/${run.sha}` }, "All changes in this commit →")),
     other ? h("div", { class: `banner ${other.state === "finished" && !other.failed_results ? "" : "bad"}` }, `Most recent run on ${run.node}: `,
       h("a", { href: `#/c/${other.sha}`, class: "mono" }, other.short), ` (an older commit, ${other.reason || "requested"}) finished ${ago(other.finished_at || other.started_at)}: `,
@@ -362,7 +363,7 @@ function commitsTable(list, notable) {
 
 function problemsBanner() {
   const n = state.manifest.counts.ingest_problems || 0;
-  return n ? h("div", { class: "banner bad" }, `${n} run director${n > 1 ? "ies were" : "y was"} rejected by the ingest and ${n > 1 ? "are" : "is"} missing from this page. The publish job's log names them; a result written by a newer benchx than the publisher pins (project.json) is the usual cause.`) : null;
+  return n ? h("div", { class: "banner bad" }, `${n} run director${n > 1 ? "ies were" : "y was"} rejected by the ingest and ${n > 1 ? "are" : "is"} missing from this page. Each run's log names them.`) : null;
 }
 
 // No results yet: say what state the project is in and what to do next.
@@ -652,7 +653,7 @@ async function renderCommit(sha) {
       n.node, n.state === "finished" ? n.state : h("span", { class: "bad" }, n.state), n.reason || "", fmtDate(n.started_at), fmtDate(n.finished_at),
       n.suites_ok, n.suites_failed ? h("span", { class: "bad" }, n.suites_failed) : "0", n.results,
       n.failed_results ? h("span", { class: "bad" }, n.failed_results) : "0",
-      runDocs(c.sha, n.node) ? h("span", {}, h("a", { href: runDocs(c.sha, n.node), target: "_blank", rel: "noopener" }, "documents"), " · ", h("a", { href: runDocs(c.sha, n.node, "log.txt"), target: "_blank", rel: "noopener" }, "log")) : ""])),
+      h("span", {}, runFiles(c.sha, n.node) ? [h("a", { href: runFiles(c.sha, n.node), target: "_blank", rel: "noopener" }, "parquet"), " · "] : null, h("a", { href: runLog(c.sha, n.node), target: "_blank", rel: "noopener" }, "log"))])),
     c.failures?.length ? [h("h3", {}, h("span", { class: "bad" }, `Failed results (${c.failures.length})`)),
       table(["benchmark", "suite", "node", "quantity", "reason"], c.failures.map((f) => [h("a", { href: benchHref(f, { node: f.node }) }, caseLabel(f)), shortSuite(f.suite), f.node, f.quantity, h("code", {}, f.reason || f.status)]))] : null,
     h("h3", {}, "Changes against the previous measured point"),
@@ -678,7 +679,7 @@ function renderAbout() {
       h("section", { class: "card" }, h("h3", {}, "How a commit gets measured"),
         h("ol", {},
           h("li", {}, "A timer on the benchmark node picks the newest commit on ", h("a", { href: upstream }, `${upstream.replace(/^https:\/\/github.com\//, "")} ${P.upstream?.branch || ""}`), " it has not measured (or a requested one from ", h("code", {}, "queue/"), ")."),
-          h("li", {}, "It builds that commit, runs every benchmark binary through benchx, and pushes the result documents to ", h("code", {}, "runs/<sha>/<node>/"), "."),
+          h("li", {}, "It builds that commit, runs every benchmark binary through benchx, and pushes the results, as Parquet, to ", h("code", {}, "runs/<sha>/<node>/"), "."),
           h("li", {}, "A GitHub Actions job turns the documents into small tables and the JSON this page reads. Nothing here is stored anywhere else."))),
       h("section", { class: "card" }, h("div", { class: "about-brand" }, wordmark()), h("h3", {}, "Benchmark your own project this way"),
         h("p", {}, "This repository is meant to be copied. Keep the node, the derived tables and this page; replace the build (the provider) and the benchmark discovery; set your project in ", h("code", {}, "project.json"), "."),

@@ -1,8 +1,6 @@
-# Derived from the repository, never a source of truth: ingest every run under
-# runs/ into a benchx store, derive the dashboard's tables (tools/marts.py), keep
-# the store as a cache and an artifact, and publish site/ to GitHub Pages when the
-# repository variable PAGES_ENABLED is "true". Delete the cache and this job
-# rebuilds everything from the documents.
+# Derived from the repository, never a source of truth: derive the dashboard's
+# tables from the Parquet files under runs/ (tools/marts.py) and publish site/ to
+# GitHub Pages when the repository variable PAGES_ENABLED is "true".
 name: publish
 on:
   push:
@@ -21,64 +19,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # project.json pins the benchx the node runs (benchx.repository, benchx.ref):
-      # a result written under a newer schema is rejected by an older store.
       - id: project
-        run: |
-          echo "benchx_repo=$(jq -r .benchx.repository project.json)" >> "$GITHUB_OUTPUT"
-          echo "benchx_ref=$(jq -r .benchx.ref project.json)" >> "$GITHUB_OUTPUT"
-          echo "name=$(jq -r .name project.json)" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@v4
-        with:
-          repository: ${{ steps.project.outputs.benchx_repo }}
-          ref: ${{ steps.project.outputs.benchx_ref }}
-          path: _benchx
+        run: echo "name=$(jq -r .name project.json)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -q -e _benchx/prototype -r tools/requirements.txt
+      - run: pip install -q -r tools/requirements.txt
       - name: test the derived tables and views
         run: python -m pytest -q tools
-      - uses: actions/cache/restore@v4
-        with:
-          path: |
-            _home/store.parquet
-            _home/ingested.txt
-          key: store-${{ github.sha }}
-          restore-keys: store-
-      - name: ingest and derive
-        env:
-          BENCHX_HOME: ${{ github.workspace }}/_home
+      - name: derive
         run: tools/build-site.sh
       - name: summary
-        env:
-          BENCHX_HOME: ${{ github.workspace }}/_home
         run: |
           {
             echo "## ${{ steps.project.outputs.name }} benchmarks"
             echo
             echo "commits measured: $(ls runs | grep -vc README || true)"
-            echo "series: $(bx series | wc -l)"
             echo
             echo '```json'
             cat site/data/manifest.json
             echo '```'
-            echo
-            echo '```'
-            bx head --table --project "${{ steps.project.outputs.name }}" -n 40
-            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/cache/save@v4
-        if: always()
-        with:
-          path: |
-            _home/store.parquet
-            _home/ingested.txt
-          key: store-${{ github.sha }}
-      - uses: actions/upload-artifact@v4
-        with:
-          name: store
-          path: _home/store.parquet
       - uses: actions/upload-artifact@v4
         with:
           name: site

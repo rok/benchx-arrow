@@ -7,12 +7,13 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT=$(cd "$HERE/.." && pwd)
 # node.env holds this node's defaults; a variable set on the command line
 # (GIT_PUSH=0 node/bench-node.sh) wins over it.
-OVERRIDES=$(for v in NODE_NAME BX SUITE_FILTER LOOKBACK REPETITIONS CASE_TIMEOUT BUILD_JOBS GIT_PUSH; do [[ -v $v ]] && printf '%s=%q\n' "$v" "${!v}"; done)
+OVERRIDES=$(for v in NODE_NAME BX PYTHON SUITE_FILTER LOOKBACK REPETITIONS CASE_TIMEOUT BUILD_JOBS GIT_PUSH; do [[ -v $v ]] && printf '%s=%q\n' "$v" "${!v}"; done)
 [[ -f $HERE/node.env ]] && source "$HERE/node.env"
 eval "$OVERRIDES"
 GIT_PUSH=${GIT_PUSH:-1}
 source "$ROOT/provider/clone-lib.sh"
 BX=${BX:-$WORK/venv/bin/bx}
+PYTHON=${PYTHON:-$WORK/venv/bin/python}
 UNIT=benchx-$PROJECT
 fail=0
 ok()   { printf '  \033[32mok\033[0m    %s\n' "$*"; }
@@ -23,6 +24,7 @@ echo "project $PROJECT: $UPSTREAM_URL ($UPSTREAM_BRANCH)"
 [[ -f $HERE/node.env ]] && ok "node/node.env" || warn "no node/node.env; using defaults (cp node/node.env.example node/node.env)"
 echo "node ${NODE_NAME:-$(hostname -s)}, work dir $WORK"
 [[ -x $BX ]] && ok "bx: $("$BX" --version 2>/dev/null || echo "$BX")" || bad "no bx at $BX (set BX in node/node.env)"
+"$PYTHON" -c 'import chdb, pyarrow' 2>/dev/null && ok "python: $PYTHON" || bad "$PYTHON cannot import chdb and pyarrow (set PYTHON in node/node.env)"
 for tool in git python3 flock; do command -v "$tool" >/dev/null && ok "$tool" || bad "$tool not found"; done
 for tool in cmake ninja c++; do command -v "$tool" >/dev/null && ok "$tool (provider)" || warn "$tool not found (the Arrow provider needs it)"; done
 command -v ccache >/dev/null && ok "ccache" || warn "no ccache: every build after a checkout is slower"

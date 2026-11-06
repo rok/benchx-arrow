@@ -1,6 +1,4 @@
 node/node.env
-_home/
-_benchx/
 __pycache__/
 site/data/
 .idea/

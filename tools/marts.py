@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Derive the dashboard's tables from the benchx store and the run metadata.
 
-The store (one benchx Parquet file) carries every result with its full document,
-which is right for a system of record and wrong for a page: a year of Arrow runs
-is gigabytes. This script writes small, flat, query-shaped tables under OUT, one
-per view, the way ClickPy keeps one materialized view per chart. Everything here
-is derived: delete OUT and run again.
+Each run is filed as runs/<sha>/<node>/run.parquet (one row: the commit, the
+tick's status and log) and results.parquet (a benchx store of that run, every
+result with its full document). That is right for a system of record and wrong
+for a page: a year of Arrow runs is gigabytes. This script writes small, flat,
+query-shaped tables under OUT, one per view, the way ClickPy keeps one
+materialized view per chart. Everything here is derived: delete OUT and run again.
 
     commits.parquet          one row per measured commit x node, with ancestry and status
     points.parquet           one row per result, sorted by suite, case and commit order
@@ -14,6 +15,7 @@ is derived: delete OUT and run again.
     changes.parquet          every point against the previous point of its series
     latest.parquet           one row per series: latest estimate, changes, noise, rank
     movers.parquet           the largest changes per commit x node (landing lists)
+    logs/<sha>/<node>.txt    each tick's log
     manifest.json            counts, the latest commit, the tables
 
 A series is (suite, case, params, quantity, node). The order of commits is
@@ -73,45 +75,59 @@ def parse_time(text):
     return dt.datetime.fromisoformat(text.replace("Z", "+00:00")).astimezone(dt.timezone.utc)
 
 
+TS = pa.timestamp("us", tz="UTC")
+RUN_SCHEMA = pa.schema([
+    ("sha", pa.string()), ("parents", pa.list_(pa.string())), ("author_date", TS), ("committer_date", TS),
+    ("subject", pa.string()), ("branch", pa.string()), ("node", pa.string()), ("state", pa.string()), ("reason", pa.string()),
+    ("started_at", TS), ("finished_at", TS), ("suites_ok", pa.int32()), ("suites_failed", pa.int32()), ("results", pa.int32()),
+    ("ingest_problems", pa.int32()), ("log", pa.string()),
+])
+
+
+def write_run(node_dir: Path, commit: dict, status: dict, log: str = "", ingest_problems: int = 0) -> None:
+    """File one run's run.parquet from the tick's commit.json and status.json."""
+    suites = status.get("suites") or {}
+    node_dir.mkdir(parents=True, exist_ok=True)
+    row = {
+        "sha": commit["sha"],
+        "parents": commit.get("parents") or [],
+        "author_date": parse_time(commit.get("author_date")),
+        "committer_date": parse_time(commit.get("committer_date")),
+        "subject": commit.get("subject") or "",
+        "branch": commit.get("branch") or "main",
+        "node": status.get("node") or node_dir.name,
+        "state": status.get("state") or "unknown",
+        "reason": status.get("reason"),
+        "started_at": parse_time(status.get("started_at")),
+        "finished_at": parse_time(status.get("finished_at")),
+        "suites_ok": int(status.get("suites_ok") or 0),
+        "suites_failed": int(status.get("suites_failed") or 0),
+        "results": int(sum((s or {}).get("results", 0) for s in suites.values())),
+        "ingest_problems": ingest_problems,
+        "log": log,
+    }
+    pq.write_table(pa.Table.from_pylist([row], schema=RUN_SCHEMA), node_dir / "run.parquet", compression="zstd")
+
+
+def read_runs(runs: Path) -> list[dict]:
+    return [pq.ParquetFile(f).read().to_pylist()[0] for f in sorted(runs.glob("*/*/run.parquet"))]
+
+
 def read_commits(runs: Path) -> pa.Table:
     rows = []
-    for commit_file in sorted(runs.glob("*/*/commit.json")):
-        node_dir = commit_file.parent
-        commit = json.loads(commit_file.read_text())
-        status = {}
-        status_file = node_dir / "status.json"
-        if status_file.is_file():
-            status = json.loads(status_file.read_text())
-        suites = status.get("suites") or {}
-        rows.append({
-            "sha": commit["sha"],
-            "short": commit["sha"][:12],
-            "parents": commit.get("parents") or [],
-            "parent": (commit.get("parents") or [None])[0],
-            "author_date": parse_time(commit.get("author_date")),
-            "committer_date": parse_time(commit.get("committer_date")),
-            "subject": commit.get("subject") or "",
-            "branch": commit.get("branch") or "main",
-            "node": status.get("node") or node_dir.name,
-            "state": status.get("state") or "unknown",
-            "reason": status.get("reason"),
-            "started_at": parse_time(status.get("started_at")),
-            "finished_at": parse_time(status.get("finished_at")),
-            "suites_ok": int(status.get("suites_ok") or 0),
-            "suites_failed": int(status.get("suites_failed") or 0),
-            "results": int(sum((s or {}).get("results", 0) for s in suites.values())),
-        })
+    for run in read_runs(runs):
+        del run["log"], run["ingest_problems"]
+        rows.append({**run, "short": run["sha"][:12], "parent": (run["parents"] or [None])[0]})
     # Commit order: by committer date on main, ties by sha; the same for every node.
     order = {}
     for sha, date in sorted({(r["sha"], r["committer_date"]) for r in rows}, key=lambda t: (t[1] or dt.datetime.min.replace(tzinfo=dt.timezone.utc), t[0])):
         order[sha] = len(order) + 1
     for r in rows:
         r["commit_order"] = order[r["sha"]]
-    ts = pa.timestamp("us", tz="UTC")
     schema = pa.schema([
         ("sha", pa.string()), ("short", pa.string()), ("parents", pa.list_(pa.string())), ("parent", pa.string()),
-        ("author_date", ts), ("committer_date", ts), ("subject", pa.string()), ("branch", pa.string()),
-        ("node", pa.string()), ("state", pa.string()), ("reason", pa.string()), ("started_at", ts), ("finished_at", ts),
+        ("author_date", TS), ("committer_date", TS), ("subject", pa.string()), ("branch", pa.string()),
+        ("node", pa.string()), ("state", pa.string()), ("reason", pa.string()), ("started_at", TS), ("finished_at", TS),
         ("suites_ok", pa.int32()), ("suites_failed", pa.int32()), ("results", pa.int32()), ("commit_order", pa.int32()),
     ])
     return pa.Table.from_pylist(rows, schema=schema)
@@ -154,9 +170,9 @@ FROM (
         replaceRegexpOne(toString(work_order.suites[1].suite), '^.*/', '')   AS suite,
         coordinates.workload.name                                            AS case,
         ifNull(toString(coordinates.workload.parameters), '')                AS params,
-        coordinates.quantity.name                                            AS quantity,
-        coordinates.quantity.unit                                            AS unit,
-        ifNull(coordinates.quantity.direction, '')                           AS direction,
+        measurement.quantity.name                                            AS quantity,
+        measurement.quantity.unit                                            AS unit,
+        ifNull(measurement.quantity.direction, '')                           AS direction,
         measurement.status                                                   AS status,
         ifNull(measurement.reason, '')                                       AS reason,
         arrayMap(o -> tupleElement(o, 'value'), measurement.observations)    AS vals,
@@ -164,6 +180,8 @@ FROM (
         ifNull(provenance.run_key, '')                                       AS run_key,
         ingest_key
     FROM {store}
+    -- A condition (the load-average beside each case) is context, not a benchmark.
+    WHERE ifNull(measurement.kind, 'measurand') = 'measurand'
 ) AS s
 LEFT JOIN (SELECT sha, node, commit_order, committer_date, ifNull(parent, '') AS parent FROM {commits}) AS c
     ON s.sha = c.sha AND s.node = c.node
@@ -256,10 +274,8 @@ ORDER BY commit_order DESC, abs(rel_change) DESC
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--store", required=True, type=Path, help="the benchx store (store.parquet)")
-    ap.add_argument("--runs", required=True, type=Path, help="the runs/ directory (commit.json, status.json)")
+    ap.add_argument("--runs", required=True, type=Path, help="the runs/ directory (run.parquet, results.parquet)")
     ap.add_argument("--out", required=True, type=Path, help="where the tables go (site/data)")
-    ap.add_argument("--ingest-problems", type=int, default=0, help="suite directories the ingest rejected (shown on the page)")
     args = ap.parse_args(argv)
     out = args.out.resolve()
     out.mkdir(parents=True, exist_ok=True)
@@ -268,10 +284,18 @@ def main(argv=None):
     commits = read_commits(args.runs)
     counts["commits"] = write(commits, out / "commits.parquet", sort_by=[("commit_order", "descending"), ("node", "ascending")])
 
-    # No store yet (a fresh template, or every run so far failed to build): publish
+    ingest_problems = 0
+    for run in read_runs(args.runs):
+        ingest_problems += run["ingest_problems"]
+        log = out / "logs" / run["sha"] / f"{run['node']}.txt"
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.write_text(run["log"])
+
+    # No results yet (a fresh template, or every run so far failed to build): publish
     # the commits alone and let the page say so.
-    if args.store.is_file():
-        points = query(POINTS_SQL.format(store=parquet(args.store.resolve()), commits=parquet(out / "commits.parquet")))
+    if any(args.runs.glob("*/*/results.parquet")):
+        store = parquet(args.runs.resolve() / "*" / "*" / "results.parquet")
+        points = query(POINTS_SQL.format(store=store, commits=parquet(out / "commits.parquet")))
     else:
         points = pa.table({})
     counts["points"] = write(points, out / "points.parquet")
@@ -301,7 +325,7 @@ def main(argv=None):
             "distinct_commits": len(set(commits.column("sha").to_pylist())),
             "nodes": sorted(set(commits.column("node").to_pylist())),
             "series": counts.get("latest", 0),
-            "ingest_problems": args.ingest_problems,
+            "ingest_problems": ingest_problems,
         },
         "latest_commit": {k: (v.isoformat() if isinstance(v, dt.datetime) else v) for k, v in newest[0].items()} if newest else None,
         "suites": suite_counts,

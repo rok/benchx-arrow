@@ -87,11 +87,9 @@ def test_movers_rank_changes_per_commit(tables):
 
 def test_read_commits_orders_by_committer_date(tmp_path):
     for sha, date, parent in [("b" * 40, "2026-02-01T10:00:00+00:00", "a" * 40), ("a" * 40, "2026-01-01T10:00:00+01:00", "9" * 40)]:
-        d = tmp_path / sha / "n1"
-        d.mkdir(parents=True)
-        (d / "commit.json").write_text(json.dumps({"sha": sha, "parents": [parent], "committer_date": date, "author_date": date, "subject": "s"}))
-        (d / "status.json").write_text(json.dumps({"state": "finished", "node": "n1", "suites_ok": 2, "suites_failed": 0,
-                                                   "suites": {"x": {"exit": 0, "results": 5}}}))
+        marts.write_run(tmp_path / sha / "n1",
+                        {"sha": sha, "parents": [parent], "committer_date": date, "author_date": date, "subject": "s"},
+                        {"state": "finished", "node": "n1", "suites_ok": 2, "suites_failed": 0, "suites": {"x": {"exit": 0, "results": 5}}})
     t = marts.read_commits(tmp_path).to_pylist()
     order = {r["sha"]: r["commit_order"] for r in t}
     assert order["a" * 40] == 1 and order["b" * 40] == 2

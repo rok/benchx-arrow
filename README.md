@@ -2,7 +2,7 @@
 
 A prototype of continuous benchmarking for [Apache Arrow](https://github.com/apache/arrow)
 C++ with [benchx](https://github.com/benchx-dev/benchx): new commits on `main`,
-measured on a dedicated machine, with the results filed here as benchx documents
+measured on a dedicated machine, with the results filed here as Parquet
 and published as a dashboard at https://mihevc.org/benchx-arrow/.
 
 **Want this for your own project?** This repository is meant to be copied. Only
@@ -14,31 +14,31 @@ the build (`provider/`) and the benchmark discovery (a few lines in
 
 ```
 apache/arrow main ◀─ git fetch (timer) ─ benchmark node ─ git push ─▶ this repository
-                                         provider → bx bench            runs/<sha>/<node>/   orders, results, log
+                                         provider → bx bench            runs/<sha>/<node>/   results.parquet, run.parquet
                                                                         queue/<sha>          requests: backfill, re-run
                                                                                  │  on: push
                                                                                  ▼  hosted job, stateless
-                                                                        bx ingest → store.parquet (cache + artifact)
                                                                         tools/marts.py → tables, tools/views.py → JSON
                                                                         site/ → GitHub Pages
 ```
 
-- **The node pushes documents; everything else is derived.** A timer on the
+- **The node pushes Parquet; everything else is derived.** A timer on the
   benchmark machine runs `node/bench-node.sh`: fetch Arrow, pick a commit, have
-  the provider build it, run every benchmark binary through `bx bench`, write the
-  work orders and result documents under `runs/<sha>/<node>/`, commit, push. No
-  scheduler service, no runner registration, no API polling. The state is the
-  repository: `ls runs/` says what was measured, `queue/` says what is asked for.
+  the provider build it, run every benchmark binary through `bx bench`, ingest
+  the results, file `results.parquet` and `run.parquet` under
+  `runs/<sha>/<node>/`, commit, push. Raw documents and harness output stay on
+  the node, in `$WORK/raw`, and never enter git. No scheduler service, no runner
+  registration, no API polling. The state is the repository: `ls runs/` says what
+  was measured, `queue/` says what is asked for.
 - **Requests are files.** Add `queue/<sha>` to backfill a skipped commit or to
   re-measure one. The node takes queue entries before anything on main and
   removes them with the commit that files the results.
-- **The store is a cache, and the dashboard's tables are derived from it.** The
-  GitHub Actions job ingests `runs/` into a benchx Parquet store, then
-  `tools/marts.py` derives small, flat, per-view tables from it with chDB
-  (in process, SQL over Parquet): commits, points per suite, changes, latest,
-  movers. They are published to GitHub Pages with the page under `site/`. Delete
-  the cache and everything rebuilds from the documents, because benchx's ingest
-  is idempotent and the documents are the system of record.
+- **The dashboard's tables are derived from the Parquet in `runs/`.** The GitHub
+  Actions job runs `tools/marts.py`, which derives small, flat, per-view tables
+  with chDB (in process, SQL over Parquet): commits, points per suite, changes,
+  latest, movers. They are published to GitHub Pages with the page under `site/`.
+  `results.parquet` is a benchx store of one run and keeps every result's full
+  document, so nothing the tables need is lost with the raw files.
 - **The provider builds, benchx measures.** `provider/arrow-provider.sh` speaks
   benchx's target-provider contract: fetch the commit, check it out into one
   reused worktree, configure and build incrementally with CMake, hand back a
@@ -57,9 +57,9 @@ and noise-aware verdicts once benchx's history mode exists.
 ## Layout
 
 ```
-project.json                 the project: name, title, upstream and branch, links, the pinned benchx
+project.json                 the project: name, title, upstream and branch, links
 PORTING.md                   how to make this benchmark another repository
-.benchx/provider.json        names the provider for `bx`
+benchx.conf.json             how `bx` measures: the provider and the adapter
 provider/arrow-provider.sh   the Arrow C++ target provider (describe | prepare)
 provider/clone-lib.sh        the shared clone, fetch and resolve helpers
 node/bench-node.sh           one tick: pick, build, measure, file, push
@@ -68,21 +68,23 @@ node/install-units.sh        install the systemd units for this checkout (--enab
 node/node.env.example        the node's settings; copy to node/node.env
 node/benchx-arrow.{service,timer}   systemd user units for the tick (templates; see install-units.sh)
 queue/                       requests (empty files named after commits)
-runs/                        the documents (see runs/README.md)
-tools/build-site.sh          ingest runs/ into a store, then derive site/data (local or CI)
+runs/                        the results, as Parquet (see runs/README.md)
+tools/file_run.py            a tick's commit, status and log as run.parquet (on the node)
+tools/build-site.sh          derive site/data from runs/ (local or CI)
 tools/marts.py               the derived tables, in chDB SQL (documented at the top of the file)
 tools/views.py               the page's JSON views, in chDB SQL over those tables
 tools/test_marts.py          the tables' arithmetic on synthetic points
 tools/test_views.py          the views: alignment with failures, failure lists, direction, an empty start
-tools/requirements.txt       the derived layer's dependencies (benchx is pinned in project.json)
+tools/test_store.py          the points, on a store the pinned benchx wrote (testdata/)
+tools/requirements.txt       the pinned benchx and the derived layer's dependencies
 site/                        the dashboard (index.html, app.js, style.css, logo.svg, favicon.svg); site/data/ is generated and git-ignored
-.github/workflows/publish.yml   test, build the store and the tables, deploy site/ to Pages
+.github/workflows/publish.yml   test, build the tables, deploy site/ to Pages
 ```
 
 ## The derived tables
 
 `site/data/`, rebuilt by every publish and by `tools/build-site.sh` locally
-(needs `bx`, and a python with `chdb` and `pyarrow`: `BX=… PYTHON=… tools/build-site.sh`).
+(needs a python with `tools/requirements.txt`: `PYTHON=… tools/build-site.sh`).
 
 | table | one row per | for |
 |---|---|---|
@@ -141,8 +143,7 @@ https://mihevc.org/benchx-arrow/.
 ```console
 $ git clone https://github.com/rok/benchx-arrow ~/benchx-arrow && cd ~/benchx-arrow
 $ cp node/node.env.example node/node.env && $EDITOR node/node.env
-$ git clone https://github.com/rok/benchx ~/src/benchx && git -C ~/src/benchx checkout "$(jq -r .benchx.ref project.json)"
-$ uv venv ~/.benchx-arrow/venv && uv pip install --python ~/.benchx-arrow/venv/bin/python -e ~/src/benchx/prototype
+$ uv venv ~/.benchx-arrow/venv && uv pip install --python ~/.benchx-arrow/venv/bin/python -r tools/requirements.txt
 $ node/check-node.sh                        # preflight: tools, upstream, push access, governor
 $ GIT_PUSH=0 node/bench-node.sh             # a first tick, kept local: builds Arrow, measures, files under runs/
 $ git clean -fd runs/                       # drop that local run, or the timer will consider it measured
@@ -168,21 +169,19 @@ fixed frequency governor, upgrades applied deliberately between runs
 
 Prototype. Known gaps, in the order they bite:
 
-- `bx bench` has no order-level timeout flag; the runner's default of 600 s per
-  order cuts long benchmark binaries short, with the unstarted cases filed as
-  `timeout-order` errors. Needs a flag in benchx.
+- The runner's default of 600 s per order cuts long benchmark binaries short,
+  with the unstarted cases filed as `timeout-order` errors. `timeouts.order_s`
+  in `benchx.conf.json` raises it.
 - benchx's Google Benchmark adapter translates wall time and CPU time only.
   Arrow's benchmarks report mostly through `bytes_per_second` and
   `items_per_second` counters, which are not yet quantities.
 - No verdicts yet: benchx's comparator has run mode only. History mode
-  (this commit against its ancestors, k × noise) is what turns the store into
-  alerts; `commit.json` records the ancestry it will need.
-- The node and the publish job must run the same benchx (`benchx.ref` in
-  `project.json`). A result written under a newer schema is rejected by an
-  older store as malformed, and the page shows how many runs were rejected.
-- The publish job's cached store is not reconciled with deletions: after
-  removing a run to re-measure it, drop the `store-` caches.
+  (this commit against its ancestors, k × noise) is what turns the results into
+  alerts; `run.parquet` records the ancestry it will need.
+- Every node runs the benchx `tools/requirements.txt` pins. Parquet from two
+  benchx result schemas does not read as one table. When a pin
+  moves to a new schema, re-measure what should stay on the page.
 
-Measured on the first run (two binaries, 94 results, one repetition): 2.3 MB of
-documents on disk, 75 KB compressed, so a full Arrow C++ run of about a
-thousand results costs on the order of a megabyte of repository per commit.
+Measured on these runs (two binaries, 94 results, one repetition): about 140 KB
+of Parquet per commit, so a full Arrow C++ run of about a thousand results costs
+on the order of a megabyte or two of repository per commit.
